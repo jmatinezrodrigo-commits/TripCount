@@ -25,29 +25,20 @@
       user-select: none;
       -webkit-tap-highlight-color: transparent;
     }
-    .hover-row:hover {
-      background-color: rgba(255, 255, 255, 0.03);
-    }
-    ::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
-    }
-    ::-webkit-scrollbar-track {
-      background: #0f172a;
-    }
-    ::-webkit-scrollbar-thumb {
-      background: #334155;
-      border-radius: 3px;
-    }
+    .hover-row:hover { background-color: rgba(255, 255, 255, 0.03); }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
   </style>
 </head>
 <body class="min-h-screen bg-slate-900 text-slate-100 flex flex-col justify-between antialiased">
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect, useRef } = React;
+    const { useState, useEffect } = React;
 
-    const STORAGE_KEY = "tripcount_app_data_v3";
+    const STORAGE_KEY = "tripcount_app_data_v4";
+    const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 
     const DEFAULT_CATEGORIES = [
       "🛒 Supermercado", "🍽️ Restaurantes", "⛽ Gasolina", "📺 Suscripciones",
@@ -60,8 +51,8 @@
 
     const DEFAULT_STATE = {
       trips: [
-        { id: "trip-1", name: "Viaje a Roma", year: 2026 },
-        { id: "trip-2", name: "Escapada Pirineos", year: 2025 }
+        { id: "trip-1", name: "Viaje a Roma", year: 2026, month: 4 },
+        { id: "trip-2", name: "Escapada Pirineos", year: 2025, month: 10 }
       ],
       selectedTripId: "trip-1",
       persons: [
@@ -72,32 +63,15 @@
       categories: DEFAULT_CATEGORIES,
       transactions: [
         {
-          id: "tx-1",
-          tripId: "trip-1",
-          date: "2026-05-12",
-          description: "Hotel Quirinale Roma",
-          amount: 340.00,
-          category: "🏠 Alojamiento",
-          splits: [
-            { personId: "p-1", amount: 170.00, paid: true },
-            { personId: "p-2", amount: 170.00, paid: true }
-          ]
+          id: "tx-1", tripId: "trip-1", date: "2026-05-12", description: "Hotel Quirinale Roma", amount: 340.00, category: "🏠 Alojamiento",
+          splits: [{ personId: "p-1", amount: 170.00, paid: true }, { personId: "p-2", amount: 170.00, paid: true }]
         },
         {
-          id: "tx-2",
-          tripId: "trip-1",
-          date: "2026-05-13",
-          description: "Cena Trattoria Da Enzo",
-          amount: 68.50,
-          category: "🍽️ Restaurantes",
-          splits: [
-            { personId: "p-1", amount: 34.25, paid: true },
-            { personId: "p-2", amount: 34.25, paid: false }
-          ]
+          id: "tx-2", tripId: "trip-1", date: "2026-05-13", description: "Cena Trattoria Da Enzo", amount: 68.50, category: "🍽️ Restaurantes",
+          splits: [{ personId: "p-1", amount: 34.25, paid: true }, { personId: "p-2", amount: 34.25, paid: false }]
         }
       ],
-      githubToken: "",
-      gistId: ""
+      githubToken: "", gistId: ""
     };
 
     function App() {
@@ -107,20 +81,14 @@
           if (local) {
             const parsed = JSON.parse(local);
             if (parsed.persons) {
-              parsed.persons = parsed.persons.map((p, idx) => {
-                if (p.id === "p-2" || idx === 1) return { ...p, id: "p-2", name: "Cris" };
-                return p;
-              });
+              parsed.persons = parsed.persons.map((p, idx) => (p.id === "p-2" || idx === 1) ? { ...p, id: "p-2", name: "Cris" } : p);
             }
-            if (!parsed.trips || parsed.trips.length === 0) {
-              parsed.trips = DEFAULT_STATE.trips;
-              parsed.selectedTripId = "trip-1";
+            if (parsed.trips) {
+              parsed.trips = parsed.trips.map(t => ({ ...t, month: t.month ?? 0 }));
             }
             return { ...DEFAULT_STATE, ...parsed };
           }
-        } catch (e) {
-          console.error("Error cargando estado:", e);
-        }
+        } catch (e) {}
         return DEFAULT_STATE;
       });
 
@@ -130,22 +98,24 @@
       const [expandedCat, setExpandedCat] = useState(null);
       const [yearFilter, setYearFilter] = useState("ALL");
 
+      // Modales
       const [showTokenModal, setShowTokenModal] = useState(false);
       const [tokenInput, setTokenInput] = useState(state.githubToken || "");
       const [syncing, setSyncing] = useState(false);
       const [confirmModal, setConfirmModal] = useState({ open: false, title: "", message: "", onConfirm: null });
 
       const [addTxModal, setAddTxModal] = useState(false);
-      const [addTripModal, setAddTripModal] = useState(false);
+      const [tripModal, setTripModal] = useState({ open: false, mode: "create", id: null, name: "", year: new Date().getFullYear(), month: new Date().getMonth() });
+      const [calcModal, setCalcModal] = useState(false);
+      
+      // Conversor
+      const [calcAmount, setCalcAmount] = useState("");
+      const [calcRate, setCalcRate] = useState("1.08"); // p.ej. USD por EUR
+
       const [txForm, setTxForm] = useState({ description: "", amount: "", date: new Date().toISOString().slice(0, 10), category: "📦 Otros", tripId: state.selectedTripId || "" });
-      const [tripForm, setTripForm] = useState({ name: "", year: new Date().getFullYear() });
 
       useEffect(() => {
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-        } catch (e) {
-          console.error("Error en localStorage", e);
-        }
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       }, [state]);
 
       const updateState = (newStateOrFn) => {
@@ -163,73 +133,49 @@
         setState(lastState);
       };
 
-      useEffect(() => {
-        const handleKeyDown = (e) => {
-          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
-            e.preventDefault();
-            handleUndo();
-          }
-        };
-        window.addEventListener("keydown", handleKeyDown);
-        return () => window.removeEventListener("keydown", handleKeyDown);
-      }, [history]);
-
-      const handleSaveToken = async () => {
-        if (!tokenInput.trim()) {
-          updateState((s) => ({ ...s, githubToken: "", gistId: "" }));
-          setShowTokenModal(false);
-          return;
-        }
-        setSyncing(true);
-        try {
-          const headers = { Authorization: `token ${tokenInput.trim()}`, "Content-Type": "application/json" };
-          const body = {
-            description: "TripCount App Data Backup",
-            public: false,
-            files: { "tripcount_data.json": { content: JSON.stringify(state, null, 2) } }
+      // Guardar / Editar Viaje
+      const handleSaveTrip = () => {
+        if (!tripModal.name.trim()) return;
+        if (tripModal.mode === "create") {
+          const newTrip = {
+            id: "trip-" + uid(),
+            name: tripModal.name.trim(),
+            year: parseInt(tripModal.year) || new Date().getFullYear(),
+            month: parseInt(tripModal.month) || 0
           };
-          let res;
-          if (state.gistId) {
-            res = await fetch(`https://api.github.com/gists/${state.gistId}`, { method: "PATCH", headers, body: JSON.stringify(body) });
-          } else {
-            res = await fetch("https://api.github.com/gists", { method: "POST", headers, body: JSON.stringify(body) });
-          }
-          const data = await res.json();
-          if (data.id) {
-            updateState((s) => ({ ...s, githubToken: tokenInput.trim(), gistId: data.id }));
-            alert("¡Sincronización con GitHub Gist configurada!");
-          } else {
-            alert("Token inválido.");
-          }
-        } catch (err) {
-          alert("Error al conectar con GitHub Gist.");
-        } finally {
-          setSyncing(false);
-          setShowTokenModal(false);
+          updateState((s) => ({ ...s, trips: [newTrip, ...s.trips], selectedTripId: newTrip.id }));
+        } else {
+          updateState((s) => ({
+            ...s,
+            trips: s.trips.map(t => t.id === tripModal.id ? { ...t, name: tripModal.name.trim(), year: parseInt(tripModal.year), month: parseInt(tripModal.month) } : t)
+          }));
         }
+        setTripModal({ open: false, mode: "create", id: null, name: "", year: new Date().getFullYear(), month: 0 });
       };
 
-      const handleCreateTrip = () => {
-        if (!tripForm.name.trim()) return;
-        const newTrip = {
-          id: "trip-" + uid(),
-          name: tripForm.name.trim(),
-          year: parseInt(tripForm.year) || new Date().getFullYear()
-        };
-        updateState((s) => ({
-          ...s,
-          trips: [newTrip, ...s.trips],
-          selectedTripId: newTrip.id
-        }));
-        setTripForm({ name: "", year: new Date().getFullYear() });
-        setAddTripModal(false);
+      // Eliminar Viaje
+      const handleDeleteTrip = (tripId, tripName) => {
+        setConfirmModal({
+          open: true,
+          title: "Eliminar Viaje",
+          message: `¿Borrar "${tripName}" y todos sus gastos asociados?`,
+          onConfirm: () => {
+            updateState((s) => {
+              const remainingTrips = s.trips.filter(t => t.id !== tripId);
+              return {
+                ...s,
+                trips: remainingTrips,
+                selectedTripId: s.selectedTripId === tripId ? (remainingTrips[0]?.id || "ALL") : s.selectedTripId,
+                transactions: s.transactions.filter(t => t.tripId !== tripId)
+              };
+            });
+            setConfirmModal({ open: false });
+          }
+        });
       };
 
-      const currentTrip = state.trips.find((t) => t.id === state.selectedTripId) || state.trips[0] || { name: "Todos", id: "ALL" };
-
-      const filteredTransactions = state.selectedTripId === "ALL"
-        ? state.transactions
-        : state.transactions.filter((t) => t.tripId === state.selectedTripId);
+      const currentTrip = state.trips.find((t) => t.id === state.selectedTripId) || { name: "Todos los Viajes", id: "ALL" };
+      const filteredTransactions = state.selectedTripId === "ALL" ? state.transactions : state.transactions.filter((t) => t.tripId === state.selectedTripId);
 
       const viewPerson = state.persons.find((p) => p.id === viewAs) || state.persons[0];
       const totalTripGross = filteredTransactions.reduce((acc, t) => acc + (t.amount || 0), 0);
@@ -243,11 +189,14 @@
         return acc + (sp && !sp.paid ? sp.amount : 0);
       }, 0);
 
+      // Días únicos con gastos para calcular media diaria
+      const uniqueDays = new Set(filteredTransactions.map(t => t.date)).size || 1;
+      const dailyAverage = totalTripGross / uniqueDays;
+
       const byCategory = {};
       filteredTransactions.forEach((tx) => {
         const sp = tx.splits?.find((s) => s.personId === viewAs);
-        const amt = sp ? sp.amount : 0;
-        byCategory[tx.category] = (byCategory[tx.category] || 0) + amt;
+        byCategory[tx.category] = (byCategory[tx.category] || 0) + (sp ? sp.amount : 0);
       });
       const catEntries = Object.entries(byCategory).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
 
@@ -255,8 +204,7 @@
         const yr = trip.year || "Sin Año";
         if (!acc[yr]) acc[yr] = [];
         const tripTxs = state.transactions.filter((tx) => tx.tripId === trip.id);
-        const totalAmount = tripTxs.reduce((sum, tx) => sum + tx.amount, 0);
-        acc[yr].push({ ...trip, totalAmount, count: tripTxs.length });
+        acc[yr].push({ ...trip, totalAmount: tripTxs.reduce((sum, tx) => sum + tx.amount, 0), count: tripTxs.length });
         return acc;
       }, {});
 
@@ -265,38 +213,19 @@
       const handleAddTransaction = () => {
         const amt = parseFloat(txForm.amount);
         if (!txForm.description.trim() || isNaN(amt) || amt <= 0) return;
-        const targetTripId = txForm.tripId || state.selectedTripId;
         const newTx = {
-          id: "tx-" + uid(),
-          tripId: targetTripId,
-          date: txForm.date,
-          description: txForm.description.trim(),
-          amount: amt,
-          category: txForm.category,
-          splits: [
-            { personId: "p-1", amount: amt / 2, paid: true },
-            { personId: "p-2", amount: amt / 2, paid: true }
-          ]
+          id: "tx-" + uid(), tripId: txForm.tripId || state.selectedTripId, date: txForm.date,
+          description: txForm.description.trim(), amount: amt, category: txForm.category,
+          splits: [{ personId: "p-1", amount: amt / 2, paid: true }, { personId: "p-2", amount: amt / 2, paid: true }]
         };
         updateState((s) => ({ ...s, transactions: [newTx, ...s.transactions] }));
         setAddTxModal(false);
         setTxForm({ description: "", amount: "", date: new Date().toISOString().slice(0, 10), category: "📦 Otros", tripId: state.selectedTripId });
       };
 
-      const deleteTx = (id) => {
-        setConfirmModal({
-          open: true,
-          title: "Eliminar gasto",
-          message: "¿Estás seguro de borrar este registro?",
-          onConfirm: () => {
-            updateState((s) => ({ ...s, transactions: s.transactions.filter((t) => t.id !== id) }));
-            setConfirmModal({ open: false });
-          }
-        });
-      };
-
       return (
         <div class="min-h-screen flex flex-col justify-between max-w-4xl mx-auto px-4 py-3">
+          {/* Header */}
           <header class="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800 pb-3">
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2">
@@ -304,74 +233,72 @@
                 <h1 class="text-xl font-bold text-slate-100 tracking-tight">TripCount</h1>
               </div>
               <div class="flex items-center gap-2 md:hidden">
-                {history.length > 0 && (
-                  <button onClick={handleUndo} class="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700">
-                    ↩ Deshacer
-                  </button>
-                )}
-                <button onClick={() => setShowTokenModal(true)} class="p-1.5 text-slate-400 hover:text-amber-400">
-                  🔑
-                </button>
+                <button onClick={() => setCalcModal(true)} class="p-1.5 text-xs bg-slate-800 rounded-lg border border-slate-700">💱</button>
+                {history.length > 0 && <button onClick={handleUndo} class="px-2 py-1 text-xs bg-slate-800 text-slate-300 rounded-lg border border-slate-700">↩</button>}
               </div>
             </div>
 
-            <div class="flex items-center gap-2 bg-slate-800/80 p-1.5 rounded-xl border border-slate-700/60">
-              <span class="text-xs text-slate-400 pl-2 font-medium">Viaje:</span>
+            {/* Selector y Gestión del Viaje */}
+            <div class="flex items-center gap-1.5 bg-slate-800/80 p-1.5 rounded-xl border border-slate-700/60">
+              <span class="text-xs text-slate-400 pl-1 font-medium">Viaje:</span>
               <select
                 value={state.selectedTripId}
                 onChange={(e) => updateState((s) => ({ ...s, selectedTripId: e.target.value }))}
-                class="bg-slate-900 text-slate-200 text-sm font-semibold rounded-lg px-2.5 py-1 outline-none border border-slate-700 focus:border-indigo-500 flex-1"
+                class="bg-slate-900 text-slate-200 text-xs font-semibold rounded-lg px-2 py-1 outline-none border border-slate-700 flex-1 max-w-[180px] truncate"
               >
-                <option value="ALL">📋 Todos los Viajes (Histórico)</option>
+                <option value="ALL">📋 Todos los Viajes</option>
                 {state.trips.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} ({t.year})
-                  </option>
+                  <option key={t.id} value={t.id}>{t.name} ({MONTHS[t.month || 0].slice(0,3)} {t.year})</option>
                 ))}
               </select>
+
+              {state.selectedTripId !== "ALL" && (
+                <>
+                  <button
+                    onClick={() => setTripModal({ open: true, mode: "edit", id: currentTrip.id, name: currentTrip.name, year: currentTrip.year, month: currentTrip.month || 0 })}
+                    class="p-1 text-slate-400 hover:text-indigo-400 text-xs" title="Editar Nombre/Fecha"
+                  >
+                    ✏️
+                  </button>
+                  <button
+                    onClick={() => handleDeleteTrip(currentTrip.id, currentTrip.name)}
+                    class="p-1 text-slate-400 hover:text-rose-400 text-xs" title="Eliminar Viaje"
+                  >
+                    🗑️
+                  </button>
+                </>
+              )}
+
               <button
-                onClick={() => setAddTripModal(true)}
-                class="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow-sm"
+                onClick={() => setTripModal({ open: true, mode: "create", id: null, name: "", year: new Date().getFullYear(), month: new Date().getMonth() })}
+                class="px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow-sm"
               >
                 + Nuevo
               </button>
             </div>
 
             <div class="hidden md:flex items-center gap-2">
-              {history.length > 0 && (
-                <button onClick={handleUndo} class="px-3 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 flex items-center gap-1">
-                  <span>↩</span> Deshacer
-                </button>
-              )}
-              <button onClick={() => setShowTokenModal(true)} class="p-2 text-slate-400 hover:text-amber-400 bg-slate-800 rounded-lg border border-slate-700">
-                🔑 {state.githubToken ? "✓ Sync" : ""}
-              </button>
+              <button onClick={() => setCalcModal(true)} class="px-2.5 py-1.5 text-xs bg-slate-800 text-slate-300 rounded-lg border border-slate-700 hover:bg-slate-700">💱 Divisas</button>
+              {history.length > 0 && <button onClick={handleUndo} class="px-2.5 py-1.5 text-xs bg-slate-800 text-slate-300 rounded-lg border border-slate-700">↩ Deshacer</button>}
               <button onClick={() => { setTxForm(f => ({ ...f, tripId: state.selectedTripId })); setAddTxModal(true); }} class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg shadow-sm">
                 + Añadir Gasto
               </button>
             </div>
           </header>
 
+          {/* Navegación */}
           <nav class="flex overflow-x-auto gap-1 border-b border-slate-800 my-3 pb-1 text-sm font-medium">
-            {[
-              ["resumen", "📊 Resumen del Viaje"],
-              ["gastos", "💳 Gastos Detallados"],
-              ["historial", "📚 Histórico por Años"],
-              ["personas", "👥 Participantes"],
-              ["categorias", "🏷️ Categorías"]
-            ].map(([k, label]) => (
+            {[["resumen", "📊 Resumen"], ["gastos", "💳 Gastos"], ["historial", "📚 Histórico / Años"], ["personas", "👥 Integrantes"], ["categorias", "🏷️ Categorías"]].map(([k, label]) => (
               <button
-                key={k}
-                onClick={() => setActiveTab(k)}
-                class={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors ${
-                  activeTab === k ? "bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 font-semibold" : "text-slate-400 hover:text-slate-200"
-                }`}
+                key={k} onClick={() => setActiveTab(k)}
+                class={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors ${activeTab === k ? "bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 font-semibold" : "text-slate-400 hover:text-slate-200"}`}
               >
                 {label}
               </button>
             ))}
           </nav>
 
+          {/* Tab 1: Resumen */}
           {activeTab === "resumen" && (
             <div class="space-y-4">
               <div class="flex items-center justify-between bg-slate-800/40 p-3 rounded-xl border border-slate-800">
@@ -379,14 +306,10 @@
                 <div class="flex gap-2">
                   {state.persons.filter(p => p.id !== "p-3").map((p) => (
                     <button
-                      key={p.id}
-                      onClick={() => setViewAs(p.id)}
-                      class={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-all ${
-                        viewAs === p.id ? "bg-indigo-600/20 text-indigo-300 border-indigo-500" : "border-slate-700 text-slate-400 hover:border-slate-600"
-                      }`}
+                      key={p.id} onClick={() => setViewAs(p.id)}
+                      class={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${viewAs === p.id ? "bg-indigo-600/20 text-indigo-300 border-indigo-500" : "border-slate-700 text-slate-400"}`}
                     >
-                      <span class="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }}></span>
-                      {p.name}
+                      <span class="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }}></span>{p.name}
                     </button>
                   ))}
                 </div>
@@ -394,166 +317,72 @@
 
               <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div class="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/50">
-                  <span class="text-xs text-slate-400 block mb-1">Gasto total viaje</span>
+                  <span class="text-xs text-slate-400 block mb-1">Total Viaje</span>
                   <span class="text-lg font-bold text-slate-100">{fmt(totalTripGross)}</span>
                 </div>
                 <div class="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/50">
-                  <span class="text-xs text-slate-400 block mb-1">Cuota de {viewPerson.name}</span>
+                  <span class="text-xs text-slate-400 block mb-1">Cuota {viewPerson.name}</span>
                   <span class="text-lg font-bold text-indigo-400">{fmt(viewTotalShare)}</span>
                 </div>
                 <div class="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/50">
-                  <span class="text-xs text-slate-400 block mb-1">Pendiente de ajuste</span>
-                  <span class={`text-lg font-bold ${pendingBalance > 0 ? "text-rose-400" : "text-emerald-400"}`}>{fmt(pendingBalance)}</span>
+                  <span class="text-xs text-slate-400 block mb-1">Media / Día activo</span>
+                  <span class="text-lg font-bold text-amber-400">{fmt(dailyAverage)}</span>
                 </div>
                 <div class="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/50">
-                  <span class="text-xs text-slate-400 block mb-1">Total apuntes</span>
-                  <span class="text-lg font-bold text-slate-300">{filteredTransactions.length}</span>
+                  <span class="text-xs text-slate-400 block mb-1">Pendiente ajuste</span>
+                  <span class={`text-lg font-bold ${pendingBalance > 0 ? "text-rose-400" : "text-emerald-400"}`}>{fmt(pendingBalance)}</span>
                 </div>
               </div>
 
+              {/* Lista por categorías */}
               <div class="bg-slate-800/40 p-4 rounded-xl border border-slate-800">
-                <h3 class="text-sm font-semibold text-slate-200 mb-3">Gastos por Categoría ({currentTrip.name})</h3>
-                {catEntries.length === 0 ? (
-                  <p class="text-xs text-slate-500 italic py-4 text-center">No hay gastos registrados en este viaje.</p>
-                ) : (
-                  <div class="space-y-2">
-                    {catEntries.map(([cat, amt]) => {
-                      const isOpen = expandedCat === cat;
-                      const pct = viewTotalShare > 0 ? Math.min(100, (amt / viewTotalShare) * 100) : 0;
-                      return (
-                        <div key={cat} class="border-b border-slate-800/80 pb-2">
-                          <div
-                            onClick={() => setExpandedCat(isOpen ? null : cat)}
-                            class="flex items-center justify-between text-xs cursor-pointer py-1 hover-row px-1 rounded"
-                          >
-                            <span class="w-36 font-medium text-slate-300 truncate">{cat}</span>
-                            <div class="flex-1 mx-3 bg-slate-900 h-1.5 rounded-full overflow-hidden">
-                              <div class="bg-indigo-500 h-full rounded-full transition-all duration-300" style={{ width: `${pct}%` }}></div>
-                            </div>
-                            <span class="font-semibold text-slate-200 w-20 text-right">{fmt(amt)}</span>
-                            <span class="text-slate-500 ml-2">{isOpen ? "▲" : "▼"}</span>
-                          </div>
-                          {isOpen && (
-                            <div class="mt-2 ml-2 pl-3 border-l-2 border-indigo-500/30 space-y-1">
-                              {filteredTransactions.filter(t => t.category === cat).map((t) => (
-                                <div key={t.id} class="flex justify-between text-[11px] text-slate-400 py-0.5">
-                                  <span>{t.description}</span>
-                                  <span class="font-mono">{fmt(t.amount)}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                <h3 class="text-sm font-semibold text-slate-200 mb-3">Gastos por Categoría</h3>
+                {catEntries.length === 0 ? <p class="text-xs text-slate-500 italic py-2 text-center">Sin gastos registrados.</p> : catEntries.map(([cat, amt]) => (
+                  <div key={cat} class="border-b border-slate-800/80 pb-2 mb-1">
+                    <div class="flex justify-between text-xs py-1">
+                      <span class="text-slate-300 font-medium">{cat}</span>
+                      <span class="font-semibold text-slate-200">{fmt(amt)}</span>
+                    </div>
                   </div>
-                )}
+                ))}
               </div>
             </div>
           )}
 
+          {/* Tab 2: Gastos */}
           {activeTab === "gastos" && (
             <div class="space-y-3">
-              <div class="flex justify-between items-center bg-slate-800/30 p-2.5 rounded-lg border border-slate-800">
-                <span class="text-xs text-slate-400">Mostrando gastos de: <strong class="text-slate-200">{currentTrip.name}</strong></span>
-                <button
-                  onClick={() => { setTxForm(f => ({ ...f, tripId: state.selectedTripId })); setAddTxModal(true); }}
-                  class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg shadow-sm"
-                >
-                  + Añadir Gasto
-                </button>
-              </div>
-
-              {filteredTransactions.length === 0 ? (
-                <div class="text-center py-12 border border-dashed border-slate-800 rounded-xl">
-                  <span class="text-3xl block mb-2">🧾</span>
-                  <p class="text-sm text-slate-400">No hay gastos añadidos a este viaje aún.</p>
-                </div>
-              ) : (
-                filteredTransactions.map((tx) => (
-                  <div key={tx.id} class="bg-slate-800/50 p-3.5 rounded-xl border border-slate-700/60 space-y-2 hover-row">
-                    <div class="flex justify-between items-start gap-2">
-                      <div>
-                        <h4 class="text-sm font-semibold text-slate-100">{tx.description}</h4>
-                        <div class="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
-                          <span>{tx.date}</span>
-                          <span>•</span>
-                          <span class="bg-slate-700/60 px-2 py-0.5 rounded text-[10px] text-slate-300">{tx.category}</span>
-                        </div>
-                      </div>
-                      <div class="text-right">
-                        <span class="text-base font-bold text-slate-100 block">{fmt(tx.amount)}</span>
-                        <button onClick={() => deleteTx(tx.id)} class="text-[11px] text-rose-400 hover:underline mt-1">
-                          Eliminar
-                        </button>
-                      </div>
-                    </div>
-
-                    <div class="pt-2 border-t border-slate-800 grid grid-cols-2 gap-2 text-xs">
-                      {tx.splits?.map((sp) => {
-                        const person = state.persons.find(p => p.id === sp.personId);
-                        if (!person) return null;
-                        return (
-                          <div key={sp.personId} class="flex items-center justify-between bg-slate-900/60 p-1.5 rounded border border-slate-800">
-                            <div class="flex items-center gap-1.5">
-                              <span class="w-2 h-2 rounded-full" style={{ backgroundColor: person.color }}></span>
-                              <span class="text-slate-300">{person.name}:</span>
-                            </div>
-                            <span class="font-medium text-slate-200">{fmt(sp.amount)}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
+              {filteredTransactions.map((tx) => (
+                <div key={tx.id} class="bg-slate-800/50 p-3.5 rounded-xl border border-slate-700/60 flex justify-between items-center">
+                  <div>
+                    <h4 class="text-sm font-semibold text-slate-100">{tx.description}</h4>
+                    <span class="text-xs text-slate-400">{tx.date} • {tx.category}</span>
                   </div>
-                ))
-              )}
+                  <div class="text-right">
+                    <span class="text-base font-bold text-slate-100 block">{fmt(tx.amount)}</span>
+                    <button onClick={() => updateState(s => ({ ...s, transactions: s.transactions.filter(t => t.id !== tx.id) }))} class="text-[11px] text-rose-400 hover:underline">Eliminar</button>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 
+          {/* Tab 3: Histórico por Años y Meses */}
           {activeTab === "historial" && (
             <div class="space-y-4">
-              <div class="flex items-center justify-between bg-slate-800/40 p-3 rounded-xl border border-slate-800">
-                <span class="text-xs text-slate-400">Filtrar por año:</span>
-                <select
-                  value={yearFilter}
-                  onChange={(e) => setYearFilter(e.target.value)}
-                  class="bg-slate-900 text-slate-200 text-xs rounded-lg px-2.5 py-1 outline-none border border-slate-700"
-                >
-                  <option value="ALL">Todos los Años</option>
-                  {yearsList.map((y) => (
-                    <option key={y} value={y}>{y}</option>
-                  ))}
-                </select>
-              </div>
-
-              {yearsList.filter(y => yearFilter === "ALL" || String(y) === String(yearFilter)).map((year) => (
+              {yearsList.map((year) => (
                 <div key={year} class="bg-slate-800/30 p-4 rounded-xl border border-slate-800 space-y-3">
-                  <div class="flex justify-between items-center border-b border-slate-800 pb-2">
-                    <h3 class="text-base font-bold text-amber-400 flex items-center gap-2">
-                      <span>📅</span> Año {year}
-                    </h3>
-                    <span class="text-xs text-slate-400">
-                      Total Año: <strong class="text-slate-200 font-mono">
-                        {fmt(tripsByYear[year].reduce((a, b) => a + b.totalAmount, 0))}
-                      </strong>
-                    </span>
-                  </div>
-
+                  <h3 class="text-base font-bold text-amber-400">📅 Año {year}</h3>
                   <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {tripsByYear[year].map((trip) => (
-                      <div
-                        key={trip.id}
-                        onClick={() => { updateState(s => ({ ...s, selectedTripId: trip.id })); setActiveTab("resumen"); }}
-                        class={`p-3 rounded-xl border cursor-pointer transition-all hover:border-indigo-500/60 ${
-                          state.selectedTripId === trip.id ? "bg-indigo-950/40 border-indigo-500" : "bg-slate-900/60 border-slate-800"
-                        }`}
-                      >
-                        <div class="flex justify-between items-start">
-                          <div>
-                            <h4 class="text-sm font-semibold text-slate-100">{trip.name}</h4>
-                            <span class="text-xs text-slate-500">{trip.count} registros</span>
-                          </div>
-                          <span class="text-sm font-bold text-indigo-300 font-mono">{fmt(trip.totalAmount)}</span>
+                      <div key={trip.id} class="p-3 bg-slate-900/60 rounded-xl border border-slate-800 flex justify-between items-center">
+                        <div>
+                          <h4 class="text-sm font-semibold text-slate-100">{trip.name}</h4>
+                          <span class="text-xs text-slate-500">{MONTHS[trip.month || 0]} • {trip.count} gastos</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                          <span class="text-sm font-bold text-indigo-300">{fmt(trip.totalAmount)}</span>
+                          <button onClick={() => setTripModal({ open: true, mode: "edit", id: trip.id, name: trip.name, year: trip.year, month: trip.month || 0 })} class="text-xs text-slate-500 hover:text-slate-300">✏️</button>
                         </div>
                       </div>
                     ))}
@@ -563,178 +392,71 @@
             </div>
           )}
 
-          {activeTab === "personas" && (
-            <div class="space-y-3">
-              <div class="bg-slate-800/40 p-4 rounded-xl border border-slate-800">
-                <h3 class="text-sm font-semibold text-slate-200 mb-3">Integrantes configurados</h3>
-                <div class="space-y-2">
-                  {state.persons.map((p) => (
-                    <div key={p.id} class="flex items-center justify-between bg-slate-900/80 p-3 rounded-xl border border-slate-800">
-                      <div class="flex items-center gap-3">
-                        <span class="w-3.5 h-3.5 rounded-full" style={{ backgroundColor: p.color }}></span>
-                        <span class="text-sm font-medium text-slate-200">{p.name}</span>
-                        {p.id === "p-2" && <span class="text-[10px] bg-pink-500/20 text-pink-300 px-2 py-0.5 rounded border border-pink-500/30">Fijo (p2)</span>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === "categorias" && (
-            <div class="space-y-3">
-              <div class="bg-slate-800/40 p-4 rounded-xl border border-slate-800">
-                <h3 class="text-sm font-semibold text-slate-200 mb-3">Categorías de gasto</h3>
-                <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  {state.categories.map((cat) => (
-                    <div key={cat} class="bg-slate-900/80 p-2.5 rounded-lg border border-slate-800 text-xs text-slate-300 flex items-center gap-2">
-                      <span>{cat}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          <footer class="mt-8 pt-4 border-t border-slate-800 text-center text-xs text-slate-500">
-            TripCount v2.1 • Guardado automático local
-          </footer>
-
-          {addTxModal && (
-            <div class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-              <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 w-full max-w-md space-y-4">
-                <h3 class="text-base font-bold text-slate-100">Añadir Nuevo Gasto</h3>
-
-                <div class="space-y-3 text-xs">
-                  <div>
-                    <label class="block text-slate-400 mb-1">Viaje asignado</label>
-                    <select
-                      value={txForm.tripId}
-                      onChange={(e) => setTxForm({ ...txForm, tripId: e.target.value })}
-                      class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none"
-                    >
-                      {state.trips.map((t) => (
-                        <option key={t.id} value={t.id}>{t.name} ({t.year})</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label class="block text-slate-400 mb-1">Concepto / Descripción</label>
-                    <input
-                      type="text"
-                      placeholder="Ej. Cena en Trattoria"
-                      value={txForm.description}
-                      onChange={(e) => setTxForm({ ...txForm, description: e.target.value })}
-                      class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none focus:border-indigo-500"
-                    />
-                  </div>
-
-                  <div class="grid grid-cols-2 gap-2">
-                    <div>
-                      <label class="block text-slate-400 mb-1">Importe (€)</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        placeholder="0.00"
-                        value={txForm.amount}
-                        onChange={(e) => setTxForm({ ...txForm, amount: e.target.value })}
-                        class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none focus:border-indigo-500"
-                      />
-                    </div>
-                    <div>
-                      <label class="block text-slate-400 mb-1">Fecha</label>
-                      <input
-                        type="date"
-                        value={txForm.date}
-                        onChange={(e) => setTxForm({ ...txForm, date: e.target.value })}
-                        class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none focus:border-indigo-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label class="block text-slate-400 mb-1">Categoría</label>
-                    <select
-                      value={txForm.category}
-                      onChange={(e) => setTxForm({ ...txForm, category: e.target.value })}
-                      class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none"
-                    >
-                      {state.categories.map((c) => (
-                        <option key={c} value={c}>{c}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div class="flex justify-end gap-2 pt-2">
-                  <button onClick={() => setAddTxModal(false)} class="px-4 py-1.5 text-xs text-slate-400 hover:text-slate-200">Cancelar</button>
-                  <button onClick={handleAddTransaction} class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg">Guardar Gasto</button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {addTripModal && (
+          {/* MODAL: Crear/Editar Viaje */}
+          {tripModal.open && (
             <div class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
               <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 w-full max-w-sm space-y-4">
-                <h3 class="text-base font-bold text-slate-100">Crear Nuevo Viaje</h3>
-
+                <h3 class="text-base font-bold text-slate-100">{tripModal.mode === "create" ? "Crear Nuevo Viaje" : "Editar Viaje"}</h3>
                 <div class="space-y-3 text-xs">
                   <div>
                     <label class="block text-slate-400 mb-1">Nombre del Viaje</label>
                     <input
-                      type="text"
-                      placeholder="Ej. Vacaciones Japón"
-                      value={tripForm.name}
-                      onChange={(e) => setTripForm({ ...tripForm, name: e.target.value })}
-                      class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none focus:border-indigo-500"
+                      type="text" value={tripModal.name} onChange={(e) => setTripModal({ ...tripModal, name: e.target.value })}
+                      class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none"
                     />
                   </div>
-                  <div>
-                    <label class="block text-slate-400 mb-1">Año</label>
-                    <input
-                      type="number"
-                      value={tripForm.year}
-                      onChange={(e) => setTripForm({ ...tripForm, year: e.target.value })}
-                      class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none focus:border-indigo-500"
-                    />
+                  <div class="grid grid-cols-2 gap-2">
+                    <div>
+                      <label class="block text-slate-400 mb-1">Mes</label>
+                      <select
+                        value={tripModal.month} onChange={(e) => setTripModal({ ...tripModal, month: e.target.value })}
+                        class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none"
+                      >
+                        {MONTHS.map((m, idx) => <option key={m} value={idx}>{m}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label class="block text-slate-400 mb-1">Año</label>
+                      <input
+                        type="number" value={tripModal.year} onChange={(e) => setTripModal({ ...tripModal, year: e.target.value })}
+                        class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none"
+                      />
+                    </div>
                   </div>
                 </div>
-
                 <div class="flex justify-end gap-2 pt-2">
-                  <button onClick={() => setAddTripModal(false)} class="px-4 py-1.5 text-xs text-slate-400 hover:text-slate-200">Cancelar</button>
-                  <button onClick={handleCreateTrip} class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg">Crear Viaje</button>
+                  <button onClick={() => setTripModal({ open: false })} class="px-3 py-1.5 text-xs text-slate-400">Cancelar</button>
+                  <button onClick={handleSaveTrip} class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg">Guardar</button>
                 </div>
               </div>
             </div>
           )}
 
-          {showTokenModal && (
+          {/* MODAL: Conversor de divisas */}
+          {calcModal && (
             <div class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-              <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 w-full max-w-md space-y-4">
-                <h3 class="text-base font-bold text-slate-100">🔑 Sincronización GitHub Gist</h3>
-                <p class="text-xs text-slate-400 leading-relaxed">
-                  Ingresa tu Personal Access Token de GitHub con permisos de <code>gist</code>.
-                </p>
-                <input
-                  type="password"
-                  placeholder="ghp_xxxxxxxxxxxx"
-                  value={tokenInput}
-                  onChange={(e) => setTokenInput(e.target.value)}
-                  class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 outline-none font-mono"
-                />
-                <div class="flex justify-end gap-2">
-                  <button onClick={() => setShowTokenModal(false)} class="px-4 py-1.5 text-xs text-slate-400">Cancelar</button>
-                  <button onClick={handleSaveToken} class="px-4 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold rounded-lg">
-                    {syncing ? "Sincronizando..." : "Guardar Token"}
-                  </button>
+              <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 w-full max-w-sm space-y-3 text-xs">
+                <h3 class="text-sm font-bold text-slate-100">💱 Conversor Rápido a EUR</h3>
+                <div>
+                  <label class="block text-slate-400 mb-1">Monto en divisa extranjera</label>
+                  <input type="number" value={calcAmount} onChange={(e) => setCalcAmount(e.target.value)} placeholder="Ej. 150" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200" />
+                </div>
+                <div>
+                  <label class="block text-slate-400 mb-1">Tasa de cambio (1 EUR = X Moneda)</label>
+                  <input type="number" step="0.01" value={calcRate} onChange={(e) => setCalcRate(e.target.value)} class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200" />
+                </div>
+                <div class="p-3 bg-slate-800/80 rounded-xl text-center">
+                  <span class="text-slate-400 block text-[10px]">Resultado estimado:</span>
+                  <span class="text-lg font-bold text-emerald-400">{fmt((parseFloat(calcAmount) || 0) / (parseFloat(calcRate) || 1))}</span>
+                </div>
+                <div class="flex justify-end">
+                  <button onClick={() => setCalcModal(false)} class="px-3 py-1.5 bg-slate-800 text-slate-300 rounded-lg">Cerrar</button>
                 </div>
               </div>
             </div>
           )}
 
+          {/* MODAL: Confirmación */}
           {confirmModal.open && (
             <div class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
               <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 w-full max-w-sm space-y-3">
@@ -742,7 +464,7 @@
                 <p class="text-xs text-slate-400">{confirmModal.message}</p>
                 <div class="flex justify-end gap-2 pt-2">
                   <button onClick={() => setConfirmModal({ open: false })} class="px-3 py-1.5 text-xs text-slate-400">Cancelar</button>
-                  <button onClick={confirmModal.onConfirm} class="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold rounded-lg">Confirmar</button>
+                  <button onClick={confirmModal.onConfirm} class="px-3 py-1.5 bg-rose-600 text-white text-xs font-semibold rounded-lg">Confirmar</button>
                 </div>
               </div>
             </div>
@@ -751,12 +473,8 @@
       );
     }
 
-    try {
-      const root = ReactDOM.createRoot(document.getElementById("root"));
-      root.render(<App />);
-    } catch (err) {
-      document.getElementById("root").innerHTML = `<div style="padding: 20px; color: #f87171;">Error al cargar: ${err.message}</div>`;
-    }
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
   </script>
 </body>
 </html>
