@@ -37,7 +37,7 @@
   <script type="text/babel">
     const { useState, useEffect } = React;
 
-    const STORAGE_KEY = "tripcount_app_data_v4";
+    const STORAGE_KEY = "tripcount_app_data_v5";
     const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 
     const DEFAULT_CATEGORIES = [
@@ -70,47 +70,24 @@
           id: "tx-2", tripId: "trip-1", date: "2026-05-13", description: "Cena Trattoria Da Enzo", amount: 68.50, category: "🍽️ Restaurantes",
           splits: [{ personId: "p-1", amount: 34.25, paid: true }, { personId: "p-2", amount: 34.25, paid: false }]
         }
-      ],
-      githubToken: "", gistId: ""
+      ]
     };
 
     function App() {
       const [state, setState] = useState(() => {
         try {
           const local = localStorage.getItem(STORAGE_KEY);
-          if (local) {
-            const parsed = JSON.parse(local);
-            if (parsed.persons) {
-              parsed.persons = parsed.persons.map((p, idx) => (p.id === "p-2" || idx === 1) ? { ...p, id: "p-2", name: "Cris" } : p);
-            }
-            if (parsed.trips) {
-              parsed.trips = parsed.trips.map(t => ({ ...t, month: t.month ?? 0 }));
-            }
-            return { ...DEFAULT_STATE, ...parsed };
-          }
+          if (local) return JSON.parse(local);
         } catch (e) {}
         return DEFAULT_STATE;
       });
 
-      const [history, setHistory] = useState([]);
       const [activeTab, setActiveTab] = useState("resumen");
       const [viewAs, setViewAs] = useState("p-1");
-      const [expandedCat, setExpandedCat] = useState(null);
-      const [yearFilter, setYearFilter] = useState("ALL");
 
-      // Modales
-      const [showTokenModal, setShowTokenModal] = useState(false);
-      const [tokenInput, setTokenInput] = useState(state.githubToken || "");
-      const [syncing, setSyncing] = useState(false);
       const [confirmModal, setConfirmModal] = useState({ open: false, title: "", message: "", onConfirm: null });
-
       const [addTxModal, setAddTxModal] = useState(false);
       const [tripModal, setTripModal] = useState({ open: false, mode: "create", id: null, name: "", year: new Date().getFullYear(), month: new Date().getMonth() });
-      const [calcModal, setCalcModal] = useState(false);
-      
-      // Conversor
-      const [calcAmount, setCalcAmount] = useState("");
-      const [calcRate, setCalcRate] = useState("1.08"); // p.ej. USD por EUR
 
       const [txForm, setTxForm] = useState({ description: "", amount: "", date: new Date().toISOString().slice(0, 10), category: "📦 Otros", tripId: state.selectedTripId || "" });
 
@@ -118,34 +95,13 @@
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       }, [state]);
 
-      const updateState = (newStateOrFn) => {
-        setState((prev) => {
-          const next = typeof newStateOrFn === "function" ? newStateOrFn(prev) : newStateOrFn;
-          setHistory((h) => [...h.slice(-20), prev]);
-          return next;
-        });
-      };
-
-      const handleUndo = () => {
-        if (history.length === 0) return;
-        const lastState = history[history.length - 1];
-        setHistory((h) => h.slice(0, h.length - 1));
-        setState(lastState);
-      };
-
-      // Guardar / Editar Viaje
       const handleSaveTrip = () => {
         if (!tripModal.name.trim()) return;
         if (tripModal.mode === "create") {
-          const newTrip = {
-            id: "trip-" + uid(),
-            name: tripModal.name.trim(),
-            year: parseInt(tripModal.year) || new Date().getFullYear(),
-            month: parseInt(tripModal.month) || 0
-          };
-          updateState((s) => ({ ...s, trips: [newTrip, ...s.trips], selectedTripId: newTrip.id }));
+          const newTrip = { id: "trip-" + uid(), name: tripModal.name.trim(), year: parseInt(tripModal.year), month: parseInt(tripModal.month) };
+          setState(s => ({ ...s, trips: [newTrip, ...s.trips], selectedTripId: newTrip.id }));
         } else {
-          updateState((s) => ({
+          setState(s => ({
             ...s,
             trips: s.trips.map(t => t.id === tripModal.id ? { ...t, name: tripModal.name.trim(), year: parseInt(tripModal.year), month: parseInt(tripModal.month) } : t)
           }));
@@ -153,19 +109,18 @@
         setTripModal({ open: false, mode: "create", id: null, name: "", year: new Date().getFullYear(), month: 0 });
       };
 
-      // Eliminar Viaje
       const handleDeleteTrip = (tripId, tripName) => {
         setConfirmModal({
           open: true,
           title: "Eliminar Viaje",
-          message: `¿Borrar "${tripName}" y todos sus gastos asociados?`,
+          message: `¿Estás seguro de eliminar "${tripName}"? Se borrarán también todos sus gastos asociados.`,
           onConfirm: () => {
-            updateState((s) => {
-              const remainingTrips = s.trips.filter(t => t.id !== tripId);
+            setState(s => {
+              const remaining = s.trips.filter(t => t.id !== tripId);
               return {
                 ...s,
-                trips: remainingTrips,
-                selectedTripId: s.selectedTripId === tripId ? (remainingTrips[0]?.id || "ALL") : s.selectedTripId,
+                trips: remaining,
+                selectedTripId: s.selectedTripId === tripId ? (remaining[0]?.id || "ALL") : s.selectedTripId,
                 transactions: s.transactions.filter(t => t.tripId !== tripId)
               };
             });
@@ -183,22 +138,6 @@
         const sp = t.splits?.find((s) => s.personId === viewAs);
         return acc + (sp ? sp.amount : 0);
       }, 0);
-
-      const pendingBalance = filteredTransactions.reduce((acc, t) => {
-        const sp = t.splits?.find((s) => s.personId === viewAs);
-        return acc + (sp && !sp.paid ? sp.amount : 0);
-      }, 0);
-
-      // Días únicos con gastos para calcular media diaria
-      const uniqueDays = new Set(filteredTransactions.map(t => t.date)).size || 1;
-      const dailyAverage = totalTripGross / uniqueDays;
-
-      const byCategory = {};
-      filteredTransactions.forEach((tx) => {
-        const sp = tx.splits?.find((s) => s.personId === viewAs);
-        byCategory[tx.category] = (byCategory[tx.category] || 0) + (sp ? sp.amount : 0);
-      });
-      const catEntries = Object.entries(byCategory).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
 
       const tripsByYear = state.trips.reduce((acc, trip) => {
         const yr = trip.year || "Sin Año";
@@ -218,33 +157,24 @@
           description: txForm.description.trim(), amount: amt, category: txForm.category,
           splits: [{ personId: "p-1", amount: amt / 2, paid: true }, { personId: "p-2", amount: amt / 2, paid: true }]
         };
-        updateState((s) => ({ ...s, transactions: [newTx, ...s.transactions] }));
+        setState(s => ({ ...s, transactions: [newTx, ...s.transactions] }));
         setAddTxModal(false);
-        setTxForm({ description: "", amount: "", date: new Date().toISOString().slice(0, 10), category: "📦 Otros", tripId: state.selectedTripId });
       };
 
       return (
         <div class="min-h-screen flex flex-col justify-between max-w-4xl mx-auto px-4 py-3">
-          {/* Header */}
           <header class="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800 pb-3">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <span class="text-2xl">✈️</span>
-                <h1 class="text-xl font-bold text-slate-100 tracking-tight">TripCount</h1>
-              </div>
-              <div class="flex items-center gap-2 md:hidden">
-                <button onClick={() => setCalcModal(true)} class="p-1.5 text-xs bg-slate-800 rounded-lg border border-slate-700">💱</button>
-                {history.length > 0 && <button onClick={handleUndo} class="px-2 py-1 text-xs bg-slate-800 text-slate-300 rounded-lg border border-slate-700">↩</button>}
-              </div>
+            <div class="flex items-center gap-2">
+              <span class="text-2xl">✈️</span>
+              <h1 class="text-xl font-bold text-slate-100 tracking-tight">TripCount</h1>
             </div>
 
-            {/* Selector y Gestión del Viaje */}
             <div class="flex items-center gap-1.5 bg-slate-800/80 p-1.5 rounded-xl border border-slate-700/60">
               <span class="text-xs text-slate-400 pl-1 font-medium">Viaje:</span>
               <select
                 value={state.selectedTripId}
-                onChange={(e) => updateState((s) => ({ ...s, selectedTripId: e.target.value }))}
-                class="bg-slate-900 text-slate-200 text-xs font-semibold rounded-lg px-2 py-1 outline-none border border-slate-700 flex-1 max-w-[180px] truncate"
+                onChange={(e) => setState(s => ({ ...s, selectedTripId: e.target.value }))}
+                class="bg-slate-900 text-slate-200 text-xs font-semibold rounded-lg px-2 py-1 outline-none border border-slate-700 flex-1 max-w-[170px] truncate"
               >
                 <option value="ALL">📋 Todos los Viajes</option>
                 {state.trips.map((t) => (
@@ -252,122 +182,59 @@
                 ))}
               </select>
 
+              {/* Botones de acción directos para el viaje seleccionado */}
               {state.selectedTripId !== "ALL" && (
-                <>
+                <div class="flex items-center gap-1 bg-slate-900 px-1 py-0.5 rounded-lg border border-slate-700">
                   <button
                     onClick={() => setTripModal({ open: true, mode: "edit", id: currentTrip.id, name: currentTrip.name, year: currentTrip.year, month: currentTrip.month || 0 })}
-                    class="p-1 text-slate-400 hover:text-indigo-400 text-xs" title="Editar Nombre/Fecha"
+                    class="p-1 text-slate-300 hover:text-indigo-400 text-xs" title="Editar Viaje"
                   >
                     ✏️
                   </button>
                   <button
                     onClick={() => handleDeleteTrip(currentTrip.id, currentTrip.name)}
-                    class="p-1 text-slate-400 hover:text-rose-400 text-xs" title="Eliminar Viaje"
+                    class="p-1 text-rose-400 hover:text-rose-300 text-xs" title="Eliminar Viaje"
                   >
                     🗑️
                   </button>
-                </>
+                </div>
               )}
 
               <button
                 onClick={() => setTripModal({ open: true, mode: "create", id: null, name: "", year: new Date().getFullYear(), month: new Date().getMonth() })}
-                class="px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow-sm"
+                class="px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow-sm ml-1"
               >
                 + Nuevo
               </button>
             </div>
-
-            <div class="hidden md:flex items-center gap-2">
-              <button onClick={() => setCalcModal(true)} class="px-2.5 py-1.5 text-xs bg-slate-800 text-slate-300 rounded-lg border border-slate-700 hover:bg-slate-700">💱 Divisas</button>
-              {history.length > 0 && <button onClick={handleUndo} class="px-2.5 py-1.5 text-xs bg-slate-800 text-slate-300 rounded-lg border border-slate-700">↩ Deshacer</button>}
-              <button onClick={() => { setTxForm(f => ({ ...f, tripId: state.selectedTripId })); setAddTxModal(true); }} class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg shadow-sm">
-                + Añadir Gasto
-              </button>
-            </div>
           </header>
 
-          {/* Navegación */}
           <nav class="flex overflow-x-auto gap-1 border-b border-slate-800 my-3 pb-1 text-sm font-medium">
-            {[["resumen", "📊 Resumen"], ["gastos", "💳 Gastos"], ["historial", "📚 Histórico / Años"], ["personas", "👥 Integrantes"], ["categorias", "🏷️ Categorías"]].map(([k, label]) => (
+            {[["resumen", "📊 Resumen"], ["gastos", "💳 Gastos"], ["historial", "📚 Histórico por Años"]].map(([k, label]) => (
               <button
                 key={k} onClick={() => setActiveTab(k)}
-                class={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors ${activeTab === k ? "bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 font-semibold" : "text-slate-400 hover:text-slate-200"}`}
+                class={`px-3 py-1.5 rounded-lg whitespace-nowrap ${activeTab === k ? "bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 font-semibold" : "text-slate-400"}`}
               >
                 {label}
               </button>
             ))}
           </nav>
 
-          {/* Tab 1: Resumen */}
           {activeTab === "resumen" && (
             <div class="space-y-4">
-              <div class="flex items-center justify-between bg-slate-800/40 p-3 rounded-xl border border-slate-800">
-                <span class="text-xs text-slate-400">Ver balance como:</span>
-                <div class="flex gap-2">
-                  {state.persons.filter(p => p.id !== "p-3").map((p) => (
-                    <button
-                      key={p.id} onClick={() => setViewAs(p.id)}
-                      class={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${viewAs === p.id ? "bg-indigo-600/20 text-indigo-300 border-indigo-500" : "border-slate-700 text-slate-400"}`}
-                    >
-                      <span class="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }}></span>{p.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div class="grid grid-cols-2 gap-3">
                 <div class="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/50">
-                  <span class="text-xs text-slate-400 block mb-1">Total Viaje</span>
+                  <span class="text-xs text-slate-400 block mb-1">Gasto Total ({currentTrip.name})</span>
                   <span class="text-lg font-bold text-slate-100">{fmt(totalTripGross)}</span>
                 </div>
                 <div class="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/50">
-                  <span class="text-xs text-slate-400 block mb-1">Cuota {viewPerson.name}</span>
+                  <span class="text-xs text-slate-400 block mb-1">Cuota Yo</span>
                   <span class="text-lg font-bold text-indigo-400">{fmt(viewTotalShare)}</span>
                 </div>
-                <div class="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/50">
-                  <span class="text-xs text-slate-400 block mb-1">Media / Día activo</span>
-                  <span class="text-lg font-bold text-amber-400">{fmt(dailyAverage)}</span>
-                </div>
-                <div class="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/50">
-                  <span class="text-xs text-slate-400 block mb-1">Pendiente ajuste</span>
-                  <span class={`text-lg font-bold ${pendingBalance > 0 ? "text-rose-400" : "text-emerald-400"}`}>{fmt(pendingBalance)}</span>
-                </div>
-              </div>
-
-              {/* Lista por categorías */}
-              <div class="bg-slate-800/40 p-4 rounded-xl border border-slate-800">
-                <h3 class="text-sm font-semibold text-slate-200 mb-3">Gastos por Categoría</h3>
-                {catEntries.length === 0 ? <p class="text-xs text-slate-500 italic py-2 text-center">Sin gastos registrados.</p> : catEntries.map(([cat, amt]) => (
-                  <div key={cat} class="border-b border-slate-800/80 pb-2 mb-1">
-                    <div class="flex justify-between text-xs py-1">
-                      <span class="text-slate-300 font-medium">{cat}</span>
-                      <span class="font-semibold text-slate-200">{fmt(amt)}</span>
-                    </div>
-                  </div>
-                ))}
               </div>
             </div>
           )}
 
-          {/* Tab 2: Gastos */}
-          {activeTab === "gastos" && (
-            <div class="space-y-3">
-              {filteredTransactions.map((tx) => (
-                <div key={tx.id} class="bg-slate-800/50 p-3.5 rounded-xl border border-slate-700/60 flex justify-between items-center">
-                  <div>
-                    <h4 class="text-sm font-semibold text-slate-100">{tx.description}</h4>
-                    <span class="text-xs text-slate-400">{tx.date} • {tx.category}</span>
-                  </div>
-                  <div class="text-right">
-                    <span class="text-base font-bold text-slate-100 block">{fmt(tx.amount)}</span>
-                    <button onClick={() => updateState(s => ({ ...s, transactions: s.transactions.filter(t => t.id !== tx.id) }))} class="text-[11px] text-rose-400 hover:underline">Eliminar</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Tab 3: Histórico por Años y Meses */}
           {activeTab === "historial" && (
             <div class="space-y-4">
               {yearsList.map((year) => (
@@ -382,7 +249,8 @@
                         </div>
                         <div class="flex items-center gap-2">
                           <span class="text-sm font-bold text-indigo-300">{fmt(trip.totalAmount)}</span>
-                          <button onClick={() => setTripModal({ open: true, mode: "edit", id: trip.id, name: trip.name, year: trip.year, month: trip.month || 0 })} class="text-xs text-slate-500 hover:text-slate-300">✏️</button>
+                          <button onClick={() => setTripModal({ open: true, mode: "edit", id: trip.id, name: trip.name, year: trip.year, month: trip.month || 0 })} class="text-xs text-slate-400 hover:text-slate-200">✏️</button>
+                          <button onClick={() => handleDeleteTrip(trip.id, trip.name)} class="text-xs text-rose-400 hover:text-rose-300">🗑️</button>
                         </div>
                       </div>
                     ))}
@@ -392,71 +260,38 @@
             </div>
           )}
 
-          {/* MODAL: Crear/Editar Viaje */}
+          {/* Modal Editar / Crear */}
           {tripModal.open && (
             <div class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
               <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 w-full max-w-sm space-y-4">
-                <h3 class="text-base font-bold text-slate-100">{tripModal.mode === "create" ? "Crear Nuevo Viaje" : "Editar Viaje"}</h3>
+                <h3 class="text-base font-bold text-slate-100">{tripModal.mode === "create" ? "Nuevo Viaje" : "Editar Viaje"}</h3>
                 <div class="space-y-3 text-xs">
                   <div>
-                    <label class="block text-slate-400 mb-1">Nombre del Viaje</label>
-                    <input
-                      type="text" value={tripModal.name} onChange={(e) => setTripModal({ ...tripModal, name: e.target.value })}
-                      class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none"
-                    />
+                    <label class="block text-slate-400 mb-1">Nombre</label>
+                    <input type="text" value={tripModal.name} onChange={(e) => setTripModal({ ...tripModal, name: e.target.value })} class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200" />
                   </div>
                   <div class="grid grid-cols-2 gap-2">
                     <div>
                       <label class="block text-slate-400 mb-1">Mes</label>
-                      <select
-                        value={tripModal.month} onChange={(e) => setTripModal({ ...tripModal, month: e.target.value })}
-                        class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none"
-                      >
+                      <select value={tripModal.month} onChange={(e) => setTripModal({ ...tripModal, month: e.target.value })} class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200">
                         {MONTHS.map((m, idx) => <option key={m} value={idx}>{m}</option>)}
                       </select>
                     </div>
                     <div>
                       <label class="block text-slate-400 mb-1">Año</label>
-                      <input
-                        type="number" value={tripModal.year} onChange={(e) => setTripModal({ ...tripModal, year: e.target.value })}
-                        class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none"
-                      />
+                      <input type="number" value={tripModal.year} onChange={(e) => setTripModal({ ...tripModal, year: e.target.value })} class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200" />
                     </div>
                   </div>
                 </div>
                 <div class="flex justify-end gap-2 pt-2">
                   <button onClick={() => setTripModal({ open: false })} class="px-3 py-1.5 text-xs text-slate-400">Cancelar</button>
-                  <button onClick={handleSaveTrip} class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg">Guardar</button>
+                  <button onClick={handleSaveTrip} class="px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg">Guardar</button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* MODAL: Conversor de divisas */}
-          {calcModal && (
-            <div class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-              <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 w-full max-w-sm space-y-3 text-xs">
-                <h3 class="text-sm font-bold text-slate-100">💱 Conversor Rápido a EUR</h3>
-                <div>
-                  <label class="block text-slate-400 mb-1">Monto en divisa extranjera</label>
-                  <input type="number" value={calcAmount} onChange={(e) => setCalcAmount(e.target.value)} placeholder="Ej. 150" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200" />
-                </div>
-                <div>
-                  <label class="block text-slate-400 mb-1">Tasa de cambio (1 EUR = X Moneda)</label>
-                  <input type="number" step="0.01" value={calcRate} onChange={(e) => setCalcRate(e.target.value)} class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200" />
-                </div>
-                <div class="p-3 bg-slate-800/80 rounded-xl text-center">
-                  <span class="text-slate-400 block text-[10px]">Resultado estimado:</span>
-                  <span class="text-lg font-bold text-emerald-400">{fmt((parseFloat(calcAmount) || 0) / (parseFloat(calcRate) || 1))}</span>
-                </div>
-                <div class="flex justify-end">
-                  <button onClick={() => setCalcModal(false)} class="px-3 py-1.5 bg-slate-800 text-slate-300 rounded-lg">Cerrar</button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* MODAL: Confirmación */}
+          {/* Modal Confirmación de Eliminación */}
           {confirmModal.open && (
             <div class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
               <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 w-full max-w-sm space-y-3">
@@ -464,7 +299,7 @@
                 <p class="text-xs text-slate-400">{confirmModal.message}</p>
                 <div class="flex justify-end gap-2 pt-2">
                   <button onClick={() => setConfirmModal({ open: false })} class="px-3 py-1.5 text-xs text-slate-400">Cancelar</button>
-                  <button onClick={confirmModal.onConfirm} class="px-3 py-1.5 bg-rose-600 text-white text-xs font-semibold rounded-lg">Confirmar</button>
+                  <button onClick={confirmModal.onConfirm} class="px-3 py-1.5 bg-rose-600 text-white text-xs font-semibold rounded-lg">Eliminar</button>
                 </div>
               </div>
             </div>
