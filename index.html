@@ -26,7 +26,6 @@
     }
     input, select, textarea, button { font-family: inherit; }
 
-    /* Corrección para desplegables en navegador de escritorio */
     select option {
       background-color: #1A1D27 !important;
       color: #E8E8F0 !important;
@@ -39,7 +38,7 @@
   <script type="text/babel">
     const { useState, useEffect } = React;
 
-    const STORAGE_KEY = "card_tracker_tripcount_v9";
+    const STORAGE_KEY = "card_tracker_tripcount_v10";
     const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 
     const DEFAULT_CATEGORIES = [
@@ -73,13 +72,7 @@
       const [state, setState] = useState(() => {
         try {
           const stored = localStorage.getItem(STORAGE_KEY);
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            if (parsed.persons) {
-              parsed.persons = parsed.persons.map((p, i) => (p.id === "cris" || i === 1) ? { ...p, id: "cris", name: "Cris" } : p);
-            }
-            return { ...DEFAULT_STATE, ...parsed };
-          }
+          if (stored) return { ...DEFAULT_STATE, ...JSON.parse(stored) };
         } catch (e) {}
         return DEFAULT_STATE;
       });
@@ -88,7 +81,6 @@
       const [viewAs, setViewAs] = useState("me");
       const [history, setHistory] = useState([]);
 
-      // Modales
       const [addTxModal, setAddTxModal] = useState(false);
       const [tokenModal, setTokenModal] = useState(false);
       const [tokenInput, setTokenInput] = useState(state.githubToken || "");
@@ -97,7 +89,6 @@
       const [tripModal, setTripModal] = useState({ open: false, mode: "create", id: null, name: "", year: new Date().getFullYear(), month: new Date().getMonth() });
       const [confirmModal, setConfirmModal] = useState({ open: false, title: "", message: "", onConfirm: null });
 
-      // Añadir categoría inline
       const [creatingCat, setCreatingCat] = useState(false);
       const [newCatInput, setNewCatInput] = useState("");
 
@@ -110,14 +101,65 @@
       };
       const [txForm, setTxForm] = useState(EMPTY_TX_FORM);
 
+      // Guardar local
       useEffect(() => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       }, [state]);
+
+      // Sincronizar hacia GitHub Gist tras cambios
+      const pushToGist = async (dataToSync) => {
+        if (!dataToSync.githubToken) return;
+        try {
+          const headers = { Authorization: `token ${dataToSync.githubToken.trim()}`, "Content-Type": "application/json" };
+          const body = {
+            description: "CardTracker Data Backup",
+            public: false,
+            files: { "cardtracker_data.json": { content: JSON.stringify(dataToSync, null, 2) } }
+          };
+          if (dataToSync.gistId) {
+            await fetch(`https://api.github.com/gists/${dataToSync.gistId}`, { method: "PATCH", headers, body: JSON.stringify(body) });
+          } else {
+            const res = await fetch("https://api.github.com/gists", { method: "POST", headers, body: JSON.stringify(body) });
+            const resData = await res.json();
+            if (resData.id) {
+              setState(s => ({ ...s, gistId: resData.id }));
+            }
+          }
+        } catch (e) {
+          console.error("Error al subir cambios a Gist:", e);
+        }
+      };
+
+      // Descargar datos más recientes de GitHub al abrir la app
+      const pullFromGist = async () => {
+        if (!state.githubToken) return;
+        setSyncing(true);
+        try {
+          const headers = { Authorization: `token ${state.githubToken.trim()}` };
+          const res = await fetch("https://api.github.com/gists", { headers });
+          const gists = await res.json();
+          const targetGist = gists.find(g => g.files && g.files["cardtracker_data.json"]);
+          if (targetGist && targetGist.files["cardtracker_data.json"].raw_url) {
+            const rawRes = await fetch(targetGist.files["cardtracker_data.json"].raw_url);
+            const remoteState = await rawRes.json();
+            setState({ ...remoteState, githubToken: state.githubToken, gistId: targetGist.id });
+          }
+        } catch (e) {
+          console.error("Error descargando de Gist:", e);
+        } finally {
+          setSyncing(false);
+        }
+      };
+
+      useEffect(() => {
+        pullFromGist();
+      }, []);
 
       const updateState = (fn) => {
         setState((prev) => {
           const next = typeof fn === "function" ? fn(prev) : fn;
           setHistory((h) => [...h.slice(-20), prev]);
+          pushToGist(next);
           return next;
         });
       };
@@ -127,20 +169,9 @@
         const last = history[history.length - 1];
         setHistory((h) => h.slice(0, h.length - 1));
         setState(last);
+        pushToGist(last);
       };
 
-      useEffect(() => {
-        const onKey = (e) => {
-          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
-            e.preventDefault();
-            handleUndo();
-          }
-        };
-        window.addEventListener("keydown", onKey);
-        return () => window.removeEventListener("keydown", onKey);
-      }, [history]);
-
-      // Guardar Token GitHub
       const handleSaveToken = async () => {
         if (!tokenInput.trim()) {
           updateState(s => ({ ...s, githubToken: "", gistId: "" }));
@@ -148,35 +179,13 @@
           return;
         }
         setSyncing(true);
-        try {
-          const headers = { Authorization: `token ${tokenInput.trim()}`, "Content-Type": "application/json" };
-          const body = {
-            description: "CardTracker TripCount Sync Data",
-            public: false,
-            files: { "cardtracker_data.json": { content: JSON.stringify(state, null, 2) } }
-          };
-          let res;
-          if (state.gistId) {
-            res = await fetch(`https://api.github.com/gists/${state.gistId}`, { method: "PATCH", headers, body: JSON.stringify(body) });
-          } else {
-            res = await fetch("https://api.github.com/gists", { method: "POST", headers, body: JSON.stringify(body) });
-          }
-          const data = await res.json();
-          if (data.id) {
-            updateState(s => ({ ...s, githubToken: tokenInput.trim(), gistId: data.id }));
-            alert("¡Token configurado y datos sincronizados!");
-          } else {
-            alert("Token inválido.");
-          }
-        } catch (e) {
-          alert("Error de conexión al sincronizar.");
-        } finally {
-          setSyncing(false);
-          setTokenModal(false);
-        }
+        const updated = { ...state, githubToken: tokenInput.trim() };
+        setState(updated);
+        await pullFromGist();
+        setSyncing(false);
+        setTokenModal(false);
       };
 
-      // Añadir Categoría nueva
       const handleAddCategory = () => {
         const val = newCatInput.trim();
         if (!val) return;
@@ -189,7 +198,6 @@
         setCreatingCat(false);
       };
 
-      // Gestión Viajes
       const handleSaveTrip = () => {
         if (!tripModal.name.trim()) return;
         if (tripModal.mode === "create") {
@@ -224,7 +232,6 @@
         });
       };
 
-      // Guardar Gasto
       const handleAddTx = () => {
         const amt = parseFloat(txForm.amount);
         if (!txForm.description.trim() || isNaN(amt) || amt <= 0) return;
@@ -268,7 +275,6 @@
 
       return (
         <div style={S.root}>
-          {/* Header Superior */}
           <header style={S.header}>
             <div style={S.headerInner}>
               <div>
@@ -276,7 +282,6 @@
                 <div style={S.headerSub}>Control de gastos personal</div>
               </div>
 
-              {/* Selector de Viajes */}
               <div style={S.tripSelectorBar}>
                 <span style={{ fontSize: 12, color: "#888" }}>Viaje:</span>
                 <select
@@ -300,18 +305,17 @@
                 <button onClick={() => setTripModal({ open: true, mode: "create", id: null, name: "", year: new Date().getFullYear(), month: new Date().getMonth() })} style={S.tripAddBtn}>+ Viaje</button>
               </div>
 
-              {/* Botones de Cabecera */}
               <div style={S.headerButtons}>
                 <button style={{ ...S.uploadBtnAlt, borderColor: state.githubToken ? "#00C9A7" : "#6C63FF", color: state.githubToken ? "#00C9A7" : "#6C63FF" }} onClick={() => { setTokenInput(state.githubToken || ""); setTokenModal(true); }}>
-                  🔑 {state.githubToken ? "Sync ON" : "Token"}
+                  🔑 {syncing ? "⏳..." : state.githubToken ? "Sync ON" : "Token"}
                 </button>
+                <button style={S.uploadBtnAlt} onClick={pullFromGist} title="Sincronizar ahora">🔄</button>
                 {history.length > 0 && <button style={S.uploadBtnAlt} onClick={handleUndo}>↩ Deshacer</button>}
                 <button style={S.uploadBtnGreen} onClick={() => { setTxForm(f => ({ ...f, tripId: state.selectedTripId !== "ALL" ? state.selectedTripId : state.trips[0]?.id })); setAddTxModal(true); }}>+ Gasto</button>
               </div>
             </div>
           </header>
 
-          {/* Navegación Principal */}
           <nav style={S.nav}>
             {[
               ["resumen", "📊 Resumen"],
@@ -327,7 +331,6 @@
           </nav>
 
           <main style={S.main}>
-            {/* VISTA: RESUMEN */}
             {tab === "resumen" && (
               <div>
                 <div style={S.viewAsBar}>
@@ -353,7 +356,6 @@
               </div>
             )}
 
-            {/* VISTA: GASTOS */}
             {tab === "gastos" && (
               <div>
                 {filteredTx.length === 0 ? (
@@ -377,7 +379,6 @@
               </div>
             )}
 
-            {/* VISTA: HISTÓRICO POR AÑOS */}
             {tab === "historial" && (
               <div>
                 {yearsList.map(year => (
@@ -401,7 +402,6 @@
               </div>
             )}
 
-            {/* VISTA: PERSONAS */}
             {tab === "personas" && (
               <div>
                 {state.persons.map(p => (
@@ -413,7 +413,6 @@
               </div>
             )}
 
-            {/* VISTA: CATEGORÍAS */}
             {tab === "categorias" && (
               <div>
                 {state.categories.map(c => (
@@ -425,7 +424,6 @@
             )}
           </main>
 
-          {/* MODAL: AÑADIR GASTO MANUAL */}
           {addTxModal && (
             <div style={S.overlay}>
               <div style={S.modal}>
@@ -456,7 +454,6 @@
                   </div>
                 </div>
 
-                {/* Categorías con opción '+' */}
                 <div style={S.formGroup}>
                   <label style={S.formLabel}>Categoría</label>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
@@ -496,7 +493,6 @@
             </div>
           )}
 
-          {/* MODAL: TOKEN GITHUB */}
           {tokenModal && (
             <div style={S.overlay}>
               <div style={{ ...S.modal, maxWidth: 380 }}>
@@ -521,7 +517,6 @@
             </div>
           )}
 
-          {/* MODAL: CREAR/EDITAR VIAJE */}
           {tripModal.open && (
             <div style={S.overlay}>
               <div style={{ ...S.modal, maxWidth: 360 }}>
@@ -550,7 +545,6 @@
             </div>
           )}
 
-          {/* MODAL: CONFIRMACIÓN */}
           {confirmModal.open && (
             <div style={S.overlay}>
               <div style={{ ...S.modal, maxWidth: 360 }}>
