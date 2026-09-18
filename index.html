@@ -3,954 +3,760 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="theme-color" content="#0f172a">
-  <title>TripCount - Gestión Inteligente de Gastos</title>
+  <title>TripCount</title>
 
-  <!-- Tailwind CSS CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            slate: {
-              850: '#151f32',
-              900: '#0f172a',
-              950: '#090d16',
-            },
-            brand: {
-              500: '#6366f1',
-              600: '#4f46e5',
-            }
-          }
-        }
-      }
-    }
-  </script>
-
-  <!-- React 18, ReactDOM & Babel CDN -->
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- React 18 & ReactDOM UMD -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <!-- Babel Standalone para JSX -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
 
   <style>
-    /* Custom scrollbar and animations */
     body {
       background-color: #0f172a;
       color: #f8fafc;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      -webkit-tap-highlight-color: transparent;
       user-select: none;
+      -webkit-tap-highlight-color: transparent;
     }
-    .editable-input:focus {
-      outline: 2px solid #6366f1;
-      background-color: #1e293b;
+    .hover-row:hover {
+      background-color: rgba(255, 255, 255, 0.03);
     }
-    /* Hide scrollbar for Chrome, Safari and Opera */
-    .no-scrollbar::-webkit-scrollbar {
-      display: none;
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
     }
-    /* Hide scrollbar for IE, Edge and Firefox */
-    .no-scrollbar {
-      -ms-overflow-style: none;  /* IE and Edge */
-      scrollbar-width: none;  /* Firefox */
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
     }
   </style>
 </head>
-<body class="bg-slate-900 text-slate-100 min-h-screen">
+<body class="min-h-screen bg-slate-900 text-slate-100 flex flex-col justify-between antialiased">
   <div id="root"></div>
 
   <script type="text/babel">
-    const STORAGE_KEY = 'tripcount_data_v1';
-    const GIST_TOKEN_KEY = 'tripcount_gist_token';
-    const GIST_ID_KEY = 'tripcount_gist_id';
+    const { useState, useEffect, useRef } = React;
+
+    const STORAGE_KEY = "tripcount_app_data_v3";
 
     const DEFAULT_CATEGORIES = [
       "🛒 Supermercado", "🍽️ Restaurantes", "⛽ Gasolina", "📺 Suscripciones",
-      "💊 Salud", "👕 Ropa", "🚌 Transporte", "🛍️ Compras Online",
-      "🏠 Alojamiento", "💵 Efectivo", "✈️ Viajes", "🎉 Ocio", "📦 Otros"
+      "💊 Salud", "👕 Ropa", "🚌 Transporte", "🛍️ Compras online",
+      "🏠 Alojamiento", "💵 Efectivo", "✈️ Vuelos/Viajes", "🎉 Ocio/Entradas", "📦 Otros"
     ];
 
+    const uid = () => Math.random().toString(36).slice(2, 9);
+    const fmt = (n) => (typeof n === "number" ? n : 0).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' });
+
     const DEFAULT_STATE = {
+      trips: [
+        { id: "trip-1", name: "Viaje a Roma", year: 2026 },
+        { id: "trip-2", name: "Escapada Pirineos", year: 2025 }
+      ],
+      selectedTripId: "trip-1",
+      persons: [
+        { id: "p-1", name: "Yo", color: "#6366f1" },
+        { id: "p-2", name: "Cris", color: "#ec4899" },
+        { id: "p-3", name: "Otros", color: "#64748b" }
+      ],
+      categories: DEFAULT_CATEGORIES,
       transactions: [
         {
           id: "tx-1",
-          date: new Date().toISOString().slice(0, 10),
-          description: "Cena de bienvenida",
-          amount: 85.50,
-          category: "🍽️ Restaurantes",
+          tripId: "trip-1",
+          date: "2026-05-12",
+          description: "Hotel Quirinale Roma",
+          amount: 340.00,
+          category: "🏠 Alojamiento",
           splits: [
-            { personId: "p-me", amount: 42.75, paid: true },
-            { personId: "p-2", amount: 42.75, paid: false }
+            { personId: "p-1", amount: 170.00, paid: true },
+            { personId: "p-2", amount: 170.00, paid: true }
           ]
         },
         {
           id: "tx-2",
-          date: new Date().toISOString().slice(0, 10),
-          description: "Supermercado compra semanal",
-          amount: 64.20,
-          category: "🛒 Supermercado",
+          tripId: "trip-1",
+          date: "2026-05-13",
+          description: "Cena Trattoria Da Enzo",
+          amount: 68.50,
+          category: "🍽️ Restaurantes",
           splits: [
-            { personId: "p-me", amount: 64.20, paid: true }
+            { personId: "p-1", amount: 34.25, paid: true },
+            { personId: "p-2", amount: 34.25, paid: false }
           ]
         }
       ],
-      dismissed: [],
-      persons: [
-        { id: "p-me", name: "Yo", color: "#6366f1" },
-        { id: "p-2", name: "Cris", color: "#ec4899" },
-        { id: "p-3", name: "Otros / Común", color: "#64748b" }
-      ],
-      categories: DEFAULT_CATEGORIES
+      githubToken: "",
+      gistId: ""
     };
 
-    const uid = () => 'id-' + Math.random().toString(36).substring(2, 9);
-    const fmt = (n) => (typeof n === 'number' && !isNaN(n) ? n : 0).toFixed(2).replace('.', ',') + ' €';
-
-    // Global Error Boundary Component
-    class ErrorBoundary extends React.Component {
-      constructor(props) {
-        super(props);
-        this.state = { hasError: false, error: null };
-      }
-      static getDerivedStateFromError(error) {
-        return { hasError: true, error };
-      }
-      componentDidCatch(error, errorInfo) {
-        console.error("TripCount App Error:", error, errorInfo);
-      }
-      render() {
-        if (this.state.hasError) {
-          return (
-            <div class="min-h-screen flex flex-col items-center justify-center p-6 text-center bg-slate-900 text-slate-100">
-              <div class="text-5xl mb-4">⚠️</div>
-              <h1 class="text-2xl font-bold mb-2">Algo salió mal en la aplicación</h1>
-              <p class="text-slate-400 text-sm mb-6 max-w-md">Se ha producido un error inesperado al renderizar la interfaz.</p>
-              <button 
-                onClick={() => { localStorage.removeItem(STORAGE_KEY); window.location.reload(); }}
-                class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-5 py-2.5 rounded-xl shadow-lg transition">
-                Restablecer Datos y Recargar
-              </button>
-            </div>
-          );
-        }
-        return this.props.children;
-      }
-    }
-
     function App() {
-      // Data State & Undo Stack
-      const [state, setState] = React.useState(() => {
+      const [state, setState] = useState(() => {
         try {
-          const stored = localStorage.getItem(STORAGE_KEY);
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            let persons = parsed.persons || DEFAULT_STATE.persons;
-            
-            // Migrate p-2 / second person name to siempre "Cris"
-            persons = persons.map(p => p.id === "p-2" ? { ...p, name: "Cris" } : p);
-            if (persons.length >= 2 && persons[1].id !== "p-me") {
-              persons[1] = { ...persons[1], name: "Cris" };
+          const local = localStorage.getItem(STORAGE_KEY);
+          if (local) {
+            const parsed = JSON.parse(local);
+            if (parsed.persons) {
+              parsed.persons = parsed.persons.map((p, idx) => {
+                if (p.id === "p-2" || idx === 1) return { ...p, id: "p-2", name: "Cris" };
+                return p;
+              });
             }
-
-            return {
-              transactions: parsed.transactions || [],
-              dismissed: parsed.dismissed || [],
-              persons: persons,
-              categories: parsed.categories || DEFAULT_CATEGORIES
-            };
+            if (!parsed.trips || parsed.trips.length === 0) {
+              parsed.trips = DEFAULT_STATE.trips;
+              parsed.selectedTripId = "trip-1";
+            }
+            return { ...DEFAULT_STATE, ...parsed };
           }
         } catch (e) {
-          console.error("Error loading local storage", e);
+          console.error("Error cargando estado:", e);
         }
         return DEFAULT_STATE;
       });
 
-      const [history, setHistory] = React.useState([]);
-      const [saveStatus, setSaveStatus] = React.useState("Guardado local");
-      const [activeTab, setActiveTab] = React.useState("resumen");
-      
-      // Sync & Modals State
-      const [gistToken, setGistToken] = React.useState(() => localStorage.getItem(GIST_TOKEN_KEY) || "");
-      const [gistId, setGistId] = React.useState(() => localStorage.getItem(GIST_ID_KEY) || "");
-      const [isSyncing, setIsSyncing] = React.useState(false);
-      const [showGistModal, setShowGistModal] = React.useState(false);
+      const [history, setHistory] = useState([]);
+      const [activeTab, setActiveTab] = useState("resumen");
+      const [viewAs, setViewAs] = useState("p-1");
+      const [expandedCat, setExpandedCat] = useState(null);
+      const [yearFilter, setYearFilter] = useState("ALL");
 
-      const [showAddTxModal, setShowAddTxModal] = React.useState(false);
-      const [showJsonModal, setShowJsonModal] = React.useState(false);
-      const [jsonInputText, setJsonInputText] = React.useState("");
+      const [showTokenModal, setShowTokenModal] = useState(false);
+      const [tokenInput, setTokenInput] = useState(state.githubToken || "");
+      const [syncing, setSyncing] = useState(false);
+      const [confirmModal, setConfirmModal] = useState({ open: false, title: "", message: "", onConfirm: null });
 
-      const [confirmModal, setConfirmModal] = React.useState({ show: false, title: "", message: "", onConfirm: null });
-      const [expandedTxId, setExpandedTxId] = React.useState(null);
-      const [viewAsPerson, setViewAsPerson] = React.useState("p-me");
+      const [addTxModal, setAddTxModal] = useState(false);
+      const [addTripModal, setAddTripModal] = useState(false);
+      const [txForm, setTxForm] = useState({ description: "", amount: "", date: new Date().toISOString().slice(0, 10), category: "📦 Otros", tripId: state.selectedTripId || "" });
+      const [tripForm, setTripForm] = useState({ name: "", year: new Date().getFullYear() });
 
-      // Custom transaction form state
-      const [txForm, setTxForm] = React.useState({
-        description: "",
-        date: new Date().toISOString().slice(0, 10),
-        amount: "",
-        category: DEFAULT_CATEGORIES[0]
-      });
+      useEffect(() => {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        } catch (e) {
+          console.error("Error en localStorage", e);
+        }
+      }, [state]);
 
-      // Save state helper with Undo History Stack
-      const updateState = (newStateOrFn, recordHistory = true) => {
-        setState(prev => {
-          const nextState = typeof newStateOrFn === 'function' ? newStateOrFn(prev) : newStateOrFn;
-          if (recordHistory) {
-            setHistory(h => [...h.slice(-20), prev]); // Keep last 20 steps
-          }
-          try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
-            setSaveStatus("Guardado local ✓");
-            setTimeout(() => setSaveStatus("Guardado local"), 2000);
-          } catch (err) {
-            console.error("Local storage save error", err);
-          }
-          return nextState;
+      const updateState = (newStateOrFn) => {
+        setState((prev) => {
+          const next = typeof newStateOrFn === "function" ? newStateOrFn(prev) : newStateOrFn;
+          setHistory((h) => [...h.slice(-20), prev]);
+          return next;
         });
       };
 
-      // Undo action
-      const handleUndo = React.useCallback(() => {
+      const handleUndo = () => {
         if (history.length === 0) return;
-        const previous = history[history.length - 1];
-        setHistory(h => h.slice(0, -1));
-        setState(previous);
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(previous));
-          setSaveStatus("Acción deshecha ↩");
-          setTimeout(() => setSaveStatus("Guardado local"), 2000);
-        } catch (e) {}
-      }, [history]);
+        const lastState = history[history.length - 1];
+        setHistory((h) => h.slice(0, h.length - 1));
+        setState(lastState);
+      };
 
-      // Keyboard shortcut Ctrl+Z / Cmd+Z listener
-      React.useEffect(() => {
+      useEffect(() => {
         const handleKeyDown = (e) => {
-          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
             e.preventDefault();
             handleUndo();
           }
         };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-      }, [handleUndo]);
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+      }, [history]);
 
-      // GitHub Gist Cloud Sync
-      const handleSyncGist = async () => {
-        if (!gistToken.trim()) {
-          alert("Ingresa un Personal Access Token de GitHub válido.");
+      const handleSaveToken = async () => {
+        if (!tokenInput.trim()) {
+          updateState((s) => ({ ...s, githubToken: "", gistId: "" }));
+          setShowTokenModal(false);
           return;
         }
-        setIsSyncing(true);
-        setSaveStatus("Sincronizando con Gist...");
+        setSyncing(true);
         try {
-          localStorage.setItem(GIST_TOKEN_KEY, gistToken);
-          const headers = {
-            "Authorization": `token ${gistToken}`,
-            "Accept": "application/vnd.github.v3+json",
-            "Content-Type": "application/json"
+          const headers = { Authorization: `token ${tokenInput.trim()}`, "Content-Type": "application/json" };
+          const body = {
+            description: "TripCount App Data Backup",
+            public: false,
+            files: { "tripcount_data.json": { content: JSON.stringify(state, null, 2) } }
           };
-          const gistContent = JSON.stringify(state, null, 2);
-
-          if (gistId) {
-            // Update existing Gist
-            const res = await fetch(`https://api.github.com/gists/${gistId}`, {
-              method: 'PATCH',
-              headers,
-              body: JSON.stringify({
-                description: "TripCount Data Backup",
-                files: { "tripcount_backup.json": { content: gistContent } }
-              })
-            });
-            if (!res.ok) throw new Error("Error al actualizar Gist");
+          let res;
+          if (state.gistId) {
+            res = await fetch(`https://api.github.com/gists/${state.gistId}`, { method: "PATCH", headers, body: JSON.stringify(body) });
           } else {
-            // Create new Gist
-            const res = await fetch(`https://api.github.com/gists`, {
-              method: 'POST',
-              headers,
-              body: JSON.stringify({
-                description: "TripCount Data Backup",
-                public: false,
-                files: { "tripcount_backup.json": { content: gistContent } }
-              })
-            });
-            if (!res.ok) throw new Error("Error al crear Gist");
-            const data = await res.json();
-            setGistId(data.id);
-            localStorage.setItem(GIST_ID_KEY, data.id);
+            res = await fetch("https://api.github.com/gists", { method: "POST", headers, body: JSON.stringify(body) });
           }
-          setSaveStatus("Sincronizado en la Nube ☁️");
-          setShowGistModal(false);
-        } catch (err) {
-          console.error(err);
-          alert("Error de sincronización con GitHub Gist: " + err.message);
-          setSaveStatus("Error de sincronización ⚠️");
-        } finally {
-          setIsSyncing(false);
-          setTimeout(() => setSaveStatus("Guardado local"), 3000);
-        }
-      };
-
-      // Load from Gist
-      const handleLoadGist = async () => {
-        if (!gistToken || !gistId) {
-          alert("Requiere Token y Gist ID configurados.");
-          return;
-        }
-        setIsSyncing(true);
-        try {
-          const res = await fetch(`https://api.github.com/gists/${gistId}`, {
-            headers: { "Authorization": `token ${gistToken}` }
-          });
-          if (!res.ok) throw new Error("No se pudo obtener el Gist");
           const data = await res.json();
-          const content = data.files["tripcount_backup.json"]?.content;
-          if (content) {
-            const parsed = JSON.parse(content);
-            updateState(parsed);
-            alert("¡Datos cargados correctamente desde la nube!");
-            setShowGistModal(false);
+          if (data.id) {
+            updateState((s) => ({ ...s, githubToken: tokenInput.trim(), gistId: data.id }));
+            alert("¡Sincronización con GitHub Gist configurada!");
+          } else {
+            alert("Token inválido.");
           }
         } catch (err) {
-          alert("Error al cargar desde Gist: " + err.message);
+          alert("Error al conectar con GitHub Gist.");
         } finally {
-          setIsSyncing(false);
+          setSyncing(false);
+          setShowTokenModal(false);
         }
       };
 
-      // Inline Editing handlers
-      const handleUpdateTxDescription = (id, newDesc) => {
-        if (!newDesc.trim()) return;
-        updateState(prev => ({
-          ...prev,
-          transactions: prev.transactions.map(t => t.id === id ? { ...t, description: newDesc.trim() } : t)
-        }));
-      };
-
-      const handleUpdateTxAmount = (id, newAmountStr) => {
-        const val = parseFloat(newAmountStr.replace(',', '.'));
-        if (isNaN(val) || val <= 0) return;
-        updateState(prev => ({
-          ...prev,
-          transactions: prev.transactions.map(t => {
-            if (t.id !== id) return t;
-            const ratio = val / (t.amount || 1);
-            const newSplits = t.splits.map(s => ({
-              ...s,
-              amount: parseFloat((s.amount * ratio).toFixed(2))
-            }));
-            return { ...t, amount: val, splits: newSplits };
-          })
-        }));
-      };
-
-      // Actions: Add Transaction, Delete & Restore
-      const handleAddTransaction = () => {
-        const amt = parseFloat(txForm.amount.replace(',', '.'));
-        if (!txForm.description.trim() || isNaN(amt) || amt <= 0) {
-          alert("Por favor introduce una descripción válida e importe mayor a 0.");
-          return;
-        }
-        const newTx = {
-          id: uid(),
-          date: txForm.date || new Date().toISOString().slice(0, 10),
-          description: txForm.description.trim(),
-          amount: amt,
-          category: txForm.category || "📦 Otros",
-          splits: [{ personId: "p-me", amount: amt, paid: true }]
+      const handleCreateTrip = () => {
+        if (!tripForm.name.trim()) return;
+        const newTrip = {
+          id: "trip-" + uid(),
+          name: tripForm.name.trim(),
+          year: parseInt(tripForm.year) || new Date().getFullYear()
         };
-        updateState(prev => ({ ...prev, transactions: [newTx, ...prev.transactions] }));
-        setShowAddTxModal(false);
-        setTxForm({ description: "", date: new Date().toISOString().slice(0, 10), amount: "", category: DEFAULT_CATEGORIES[0] });
+        updateState((s) => ({
+          ...s,
+          trips: [newTrip, ...s.trips],
+          selectedTripId: newTrip.id
+        }));
+        setTripForm({ name: "", year: new Date().getFullYear() });
+        setAddTripModal(false);
       };
 
-      const requestDeleteTx = (id) => {
-        setConfirmModal({
-          show: true,
-          title: "Eliminar Transacción",
-          message: "¿Estás seguro de mover este gasto a la papelera / desestimados?",
-          onConfirm: () => {
-            updateState(prev => {
-              const txToDelete = prev.transactions.find(t => t.id === id);
-              if (!txToDelete) return prev;
-              return {
-                ...prev,
-                transactions: prev.transactions.filter(t => t.id !== id),
-                dismissed: [txToDelete, ...prev.dismissed]
-              };
-            });
-            setConfirmModal({ show: false });
-          }
-        });
-      };
+      const currentTrip = state.trips.find((t) => t.id === state.selectedTripId) || state.trips[0] || { name: "Todos", id: "ALL" };
 
-      const handleRestoreTx = (id) => {
-        updateState(prev => {
-          const restored = prev.dismissed.find(d => d.id === id);
-          if (!restored) return prev;
-          return {
-            ...prev,
-            dismissed: prev.dismissed.filter(d => d.id !== id),
-            transactions: [restored, ...prev.transactions]
-          };
-        });
-      };
+      const filteredTransactions = state.selectedTripId === "ALL"
+        ? state.transactions
+        : state.transactions.filter((t) => t.tripId === state.selectedTripId);
 
-      // JSON Import Handling
-      const handleImportJson = () => {
-        try {
-          const parsed = JSON.parse(jsonInputText);
-          const newTxs = Array.isArray(parsed) ? parsed : (parsed.transactions || []);
-          if (!Array.isArray(newTxs)) throw new Error("Estructura JSON inválida");
-
-          const formatted = newTxs.map(t => ({
-            id: t.id || uid(),
-            date: t.date || new Date().toISOString().slice(0, 10),
-            description: t.description || "Sin descripción",
-            amount: typeof t.amount === 'number' ? t.amount : parseFloat(t.amount) || 0,
-            category: t.category || "📦 Otros",
-            splits: t.splits || [{ personId: "p-me", amount: typeof t.amount === 'number' ? t.amount : 0, paid: true }]
-          }));
-
-          updateState(prev => ({ ...prev, transactions: [...formatted, ...prev.transactions] }));
-          setShowJsonModal(false);
-          setJsonInputText("");
-          alert(`Se han importado ${formatted.length} transacciones.`);
-        } catch (err) {
-          alert("Error al parsear el JSON: " + err.message);
-        }
-      };
-
-      // Calculated Totals
-      const safeTransactions = state.transactions || [];
-      const currentPerson = (state.persons || []).find(p => p.id === viewAsPerson) || (state.persons || [])[0] || { id: "p-me", name: "Yo", color: "#6366f1" };
-      
-      const totalGrossSpend = safeTransactions.reduce((acc, t) => acc + (t.amount || 0), 0);
-      const personTotalSpend = safeTransactions.reduce((acc, t) => {
-        const sp = (t.splits || []).find(s => s.personId === viewAsPerson);
+      const viewPerson = state.persons.find((p) => p.id === viewAs) || state.persons[0];
+      const totalTripGross = filteredTransactions.reduce((acc, t) => acc + (t.amount || 0), 0);
+      const viewTotalShare = filteredTransactions.reduce((acc, t) => {
+        const sp = t.splits?.find((s) => s.personId === viewAs);
         return acc + (sp ? sp.amount : 0);
       }, 0);
 
-      const pendingToReceive = safeTransactions.reduce((acc, t) => {
-        if (viewAsPerson === "p-me") {
-          return acc + (t.splits || []).filter(s => s.personId !== "p-me" && !s.paid).reduce((sAcc, s) => sAcc + s.amount, 0);
-        } else {
-          const sp = (t.splits || []).find(s => s.personId === viewAsPerson);
-          return acc + (sp && !sp.paid ? sp.amount : 0);
-        }
+      const pendingBalance = filteredTransactions.reduce((acc, t) => {
+        const sp = t.splits?.find((s) => s.personId === viewAs);
+        return acc + (sp && !sp.paid ? sp.amount : 0);
       }, 0);
 
-      // Aggregates by Category
-      const catTotals = {};
-      safeTransactions.forEach(t => {
-        const cat = t.category || "📦 Otros";
-        const sp = (t.splits || []).find(s => s.personId === viewAsPerson);
+      const byCategory = {};
+      filteredTransactions.forEach((tx) => {
+        const sp = tx.splits?.find((s) => s.personId === viewAs);
         const amt = sp ? sp.amount : 0;
-        catTotals[cat] = (catTotals[cat] || 0) + amt;
+        byCategory[tx.category] = (byCategory[tx.category] || 0) + amt;
       });
+      const catEntries = Object.entries(byCategory).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+
+      const tripsByYear = state.trips.reduce((acc, trip) => {
+        const yr = trip.year || "Sin Año";
+        if (!acc[yr]) acc[yr] = [];
+        const tripTxs = state.transactions.filter((tx) => tx.tripId === trip.id);
+        const totalAmount = tripTxs.reduce((sum, tx) => sum + tx.amount, 0);
+        acc[yr].push({ ...trip, totalAmount, count: tripTxs.length });
+        return acc;
+      }, {});
+
+      const yearsList = Object.keys(tripsByYear).sort((a, b) => b - a);
+
+      const handleAddTransaction = () => {
+        const amt = parseFloat(txForm.amount);
+        if (!txForm.description.trim() || isNaN(amt) || amt <= 0) return;
+        const targetTripId = txForm.tripId || state.selectedTripId;
+        const newTx = {
+          id: "tx-" + uid(),
+          tripId: targetTripId,
+          date: txForm.date,
+          description: txForm.description.trim(),
+          amount: amt,
+          category: txForm.category,
+          splits: [
+            { personId: "p-1", amount: amt / 2, paid: true },
+            { personId: "p-2", amount: amt / 2, paid: true }
+          ]
+        };
+        updateState((s) => ({ ...s, transactions: [newTx, ...s.transactions] }));
+        setAddTxModal(false);
+        setTxForm({ description: "", amount: "", date: new Date().toISOString().slice(0, 10), category: "📦 Otros", tripId: state.selectedTripId });
+      };
+
+      const deleteTx = (id) => {
+        setConfirmModal({
+          open: true,
+          title: "Eliminar gasto",
+          message: "¿Estás seguro de borrar este registro?",
+          onConfirm: () => {
+            updateState((s) => ({ ...s, transactions: s.transactions.filter((t) => t.id !== id) }));
+            setConfirmModal({ open: false });
+          }
+        });
+      };
 
       return (
-        <div class="max-w-2xl mx-auto flex flex-col min-h-screen pb-20">
-          
-          {/* Header */}
-          <header class="bg-slate-850 border-b border-slate-800 sticky top-0 z-30 px-4 py-3 shadow-md">
+        <div class="min-h-screen flex flex-col justify-between max-w-4xl mx-auto px-4 py-3">
+          <header class="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800 pb-3">
             <div class="flex items-center justify-between">
-              <div>
-                <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-                  <span class="p-1.5 bg-indigo-600 rounded-lg text-sm">✈️</span> TripCount
-                </h1>
-                <p class="text-xs text-slate-400 mt-0.5">{saveStatus}</p>
-              </div>
-
               <div class="flex items-center gap-2">
-                <button 
-                  onClick={handleUndo}
-                  disabled={history.length === 0}
-                  title="Deshacer cambio (Ctrl+Z)"
-                  class={`px-2.5 py-1.5 text-xs font-semibold rounded-lg border flex items-center gap-1 transition ${
-                    history.length > 0 
-                      ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' 
-                      : 'bg-slate-900 border-slate-800 text-slate-600 cursor-not-allowed'
-                  }`}>
-                  ↩ Deshacer
-                </button>
-
-                <button 
-                  onClick={() => setShowGistModal(true)}
-                  title="Configurar Sincronización Gist"
-                  class="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-amber-400 text-xs font-medium flex items-center gap-1">
-                  🔑 Nube
-                </button>
-
-                <button 
-                  onClick={() => setShowAddTxModal(true)}
-                  class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs rounded-lg shadow-lg flex items-center gap-1 transition">
-                  + Gasto
+                <span class="text-2xl">✈️</span>
+                <h1 class="text-xl font-bold text-slate-100 tracking-tight">TripCount</h1>
+              </div>
+              <div class="flex items-center gap-2 md:hidden">
+                {history.length > 0 && (
+                  <button onClick={handleUndo} class="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700">
+                    ↩ Deshacer
+                  </button>
+                )}
+                <button onClick={() => setShowTokenModal(true)} class="p-1.5 text-slate-400 hover:text-amber-400">
+                  🔑
                 </button>
               </div>
             </div>
+
+            <div class="flex items-center gap-2 bg-slate-800/80 p-1.5 rounded-xl border border-slate-700/60">
+              <span class="text-xs text-slate-400 pl-2 font-medium">Viaje:</span>
+              <select
+                value={state.selectedTripId}
+                onChange={(e) => updateState((s) => ({ ...s, selectedTripId: e.target.value }))}
+                class="bg-slate-900 text-slate-200 text-sm font-semibold rounded-lg px-2.5 py-1 outline-none border border-slate-700 focus:border-indigo-500 flex-1"
+              >
+                <option value="ALL">📋 Todos los Viajes (Histórico)</option>
+                {state.trips.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} ({t.year})
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={() => setAddTripModal(true)}
+                class="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow-sm"
+              >
+                + Nuevo
+              </button>
+            </div>
+
+            <div class="hidden md:flex items-center gap-2">
+              {history.length > 0 && (
+                <button onClick={handleUndo} class="px-3 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 flex items-center gap-1">
+                  <span>↩</span> Deshacer
+                </button>
+              )}
+              <button onClick={() => setShowTokenModal(true)} class="p-2 text-slate-400 hover:text-amber-400 bg-slate-800 rounded-lg border border-slate-700">
+                🔑 {state.githubToken ? "✓ Sync" : ""}
+              </button>
+              <button onClick={() => { setTxForm(f => ({ ...f, tripId: state.selectedTripId })); setAddTxModal(true); }} class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg shadow-sm">
+                + Añadir Gasto
+              </button>
+            </div>
           </header>
 
-          {/* Navigation Tabs */}
-          <nav class="bg-slate-900/90 backdrop-blur border-b border-slate-800 sticky top-[57px] z-20 flex overflow-x-auto no-scrollbar">
+          <nav class="flex overflow-x-auto gap-1 border-b border-slate-800 my-3 pb-1 text-sm font-medium">
             {[
-              ["resumen", "📋 Resumen"],
-              ["gastos", "💳 Gastos"],
-              ["personas", "👥 Personas"],
-              ["categorias", "🏷️ Categorías"],
-              ["desestimados", "🗑️ Papelera"]
-            ].map(([tabKey, label]) => (
+              ["resumen", "📊 Resumen del Viaje"],
+              ["gastos", "💳 Gastos Detallados"],
+              ["historial", "📚 Histórico por Años"],
+              ["personas", "👥 Participantes"],
+              ["categorias", "🏷️ Categorías"]
+            ].map(([k, label]) => (
               <button
-                key={tabKey}
-                onClick={() => setActiveTab(tabKey)}
-                class={`px-4 py-3 text-xs font-semibold whitespace-nowrap border-b-2 transition flex items-center gap-1.5 ${
-                  activeTab === tabKey
-                    ? 'border-indigo-500 text-indigo-400 bg-slate-800/40'
-                    : 'border-transparent text-slate-400 hover:text-slate-200'
-                }`}>
+                key={k}
+                onClick={() => setActiveTab(k)}
+                class={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors ${
+                  activeTab === k ? "bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 font-semibold" : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
                 {label}
-                {tabKey === 'desestimados' && (state.dismissed || []).length > 0 && (
-                  <span class="ml-1 px-1.5 py-0.2 bg-rose-500/20 text-rose-400 text-[10px] rounded-full font-bold">
-                    {(state.dismissed || []).length}
-                  </span>
-                )}
               </button>
             ))}
           </nav>
 
-          {/* Main Body */}
-          <main class="p-4 flex-1">
-            
-            {/* VIEW 1: RESUMEN COMBINADO */}
-            {activeTab === "resumen" && (
-              <div class="space-y-4">
-                {/* View Person Selector */}
-                <div class="bg-slate-800/60 p-3 rounded-xl border border-slate-800 flex items-center justify-between">
-                  <span class="text-xs text-slate-400 font-medium">Ver desglose para:</span>
-                  <div class="flex gap-1.5 overflow-x-auto">
-                    {(state.persons || []).map(p => (
-                      <button
-                        key={p.id}
-                        onClick={() => setViewAsPerson(p.id)}
-                        class={`px-2.5 py-1 text-xs rounded-lg font-medium transition flex items-center gap-1.5 ${
-                          viewAsPerson === p.id 
-                            ? 'bg-indigo-600 text-white shadow-md' 
-                            : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700'
-                        }`}>
-                        <span class="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }}></span>
-                        {p.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Stat Cards */}
-                <div class="grid grid-cols-2 gap-3">
-                  <div class="bg-slate-800/80 border border-slate-700/60 p-3.5 rounded-xl">
-                    <span class="text-xs text-slate-400 block mb-1">Gasto de {currentPerson.name}</span>
-                    <span class="text-xl font-bold text-indigo-400">{fmt(personTotalSpend)}</span>
-                  </div>
-                  <div class="bg-slate-800/80 border border-slate-700/60 p-3.5 rounded-xl">
-                    <span class="text-xs text-slate-400 block mb-1">Gasto Bruto Total</span>
-                    <span class="text-xl font-bold text-slate-200">{fmt(totalGrossSpend)}</span>
-                  </div>
-                  <div class="bg-slate-800/80 border border-slate-700/60 p-3.5 rounded-xl col-span-2 flex justify-between items-center">
-                    <div>
-                      <span class="text-xs text-slate-400 block">
-                        {viewAsPerson === "p-me" ? "Pendiente de cobrar" : "Pendiente de abonar"}
-                      </span>
-                      <span class={`text-lg font-bold ${pendingToReceive > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
-                        {fmt(pendingToReceive)}
-                      </span>
-                    </div>
-                    <button 
-                      onClick={() => setShowJsonModal(true)}
-                      class="px-2.5 py-1.5 bg-slate-700 hover:bg-slate-600 text-xs font-semibold text-slate-200 rounded-lg">
-                      📥 Importar JSON
+          {activeTab === "resumen" && (
+            <div class="space-y-4">
+              <div class="flex items-center justify-between bg-slate-800/40 p-3 rounded-xl border border-slate-800">
+                <span class="text-xs text-slate-400">Ver balance como:</span>
+                <div class="flex gap-2">
+                  {state.persons.filter(p => p.id !== "p-3").map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => setViewAs(p.id)}
+                      class={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-all ${
+                        viewAs === p.id ? "bg-indigo-600/20 text-indigo-300 border-indigo-500" : "border-slate-700 text-slate-400 hover:border-slate-600"
+                      }`}
+                    >
+                      <span class="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }}></span>
+                      {p.name}
                     </button>
-                  </div>
+                  ))}
                 </div>
+              </div>
 
-                {/* Category Bars */}
-                <div class="bg-slate-800/80 border border-slate-700/60 p-4 rounded-xl space-y-3">
-                  <h3 class="text-sm font-semibold text-slate-200">Gastos por Categoría</h3>
-                  {Object.keys(catTotals).length === 0 ? (
-                    <p class="text-xs text-slate-500 py-4 text-center">No hay gastos registrados</p>
-                  ) : (
-                    Object.entries(catTotals)
-                      .filter(([, val]) => val > 0)
-                      .sort((a, b) => b[1] - a[1])
-                      .map(([cat, val]) => {
-                        const pct = personTotalSpend > 0 ? Math.min(100, (val / personTotalSpend) * 100) : 0;
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div class="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/50">
+                  <span class="text-xs text-slate-400 block mb-1">Gasto total viaje</span>
+                  <span class="text-lg font-bold text-slate-100">{fmt(totalTripGross)}</span>
+                </div>
+                <div class="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/50">
+                  <span class="text-xs text-slate-400 block mb-1">Cuota de {viewPerson.name}</span>
+                  <span class="text-lg font-bold text-indigo-400">{fmt(viewTotalShare)}</span>
+                </div>
+                <div class="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/50">
+                  <span class="text-xs text-slate-400 block mb-1">Pendiente de ajuste</span>
+                  <span class={`text-lg font-bold ${pendingBalance > 0 ? "text-rose-400" : "text-emerald-400"}`}>{fmt(pendingBalance)}</span>
+                </div>
+                <div class="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/50">
+                  <span class="text-xs text-slate-400 block mb-1">Total apuntes</span>
+                  <span class="text-lg font-bold text-slate-300">{filteredTransactions.length}</span>
+                </div>
+              </div>
+
+              <div class="bg-slate-800/40 p-4 rounded-xl border border-slate-800">
+                <h3 class="text-sm font-semibold text-slate-200 mb-3">Gastos por Categoría ({currentTrip.name})</h3>
+                {catEntries.length === 0 ? (
+                  <p class="text-xs text-slate-500 italic py-4 text-center">No hay gastos registrados en este viaje.</p>
+                ) : (
+                  <div class="space-y-2">
+                    {catEntries.map(([cat, amt]) => {
+                      const isOpen = expandedCat === cat;
+                      const pct = viewTotalShare > 0 ? Math.min(100, (amt / viewTotalShare) * 100) : 0;
+                      return (
+                        <div key={cat} class="border-b border-slate-800/80 pb-2">
+                          <div
+                            onClick={() => setExpandedCat(isOpen ? null : cat)}
+                            class="flex items-center justify-between text-xs cursor-pointer py-1 hover-row px-1 rounded"
+                          >
+                            <span class="w-36 font-medium text-slate-300 truncate">{cat}</span>
+                            <div class="flex-1 mx-3 bg-slate-900 h-1.5 rounded-full overflow-hidden">
+                              <div class="bg-indigo-500 h-full rounded-full transition-all duration-300" style={{ width: `${pct}%` }}></div>
+                            </div>
+                            <span class="font-semibold text-slate-200 w-20 text-right">{fmt(amt)}</span>
+                            <span class="text-slate-500 ml-2">{isOpen ? "▲" : "▼"}</span>
+                          </div>
+                          {isOpen && (
+                            <div class="mt-2 ml-2 pl-3 border-l-2 border-indigo-500/30 space-y-1">
+                              {filteredTransactions.filter(t => t.category === cat).map((t) => (
+                                <div key={t.id} class="flex justify-between text-[11px] text-slate-400 py-0.5">
+                                  <span>{t.description}</span>
+                                  <span class="font-mono">{fmt(t.amount)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === "gastos" && (
+            <div class="space-y-3">
+              <div class="flex justify-between items-center bg-slate-800/30 p-2.5 rounded-lg border border-slate-800">
+                <span class="text-xs text-slate-400">Mostrando gastos de: <strong class="text-slate-200">{currentTrip.name}</strong></span>
+                <button
+                  onClick={() => { setTxForm(f => ({ ...f, tripId: state.selectedTripId })); setAddTxModal(true); }}
+                  class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg shadow-sm"
+                >
+                  + Añadir Gasto
+                </button>
+              </div>
+
+              {filteredTransactions.length === 0 ? (
+                <div class="text-center py-12 border border-dashed border-slate-800 rounded-xl">
+                  <span class="text-3xl block mb-2">🧾</span>
+                  <p class="text-sm text-slate-400">No hay gastos añadidos a este viaje aún.</p>
+                </div>
+              ) : (
+                filteredTransactions.map((tx) => (
+                  <div key={tx.id} class="bg-slate-800/50 p-3.5 rounded-xl border border-slate-700/60 space-y-2 hover-row">
+                    <div class="flex justify-between items-start gap-2">
+                      <div>
+                        <h4 class="text-sm font-semibold text-slate-100">{tx.description}</h4>
+                        <div class="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
+                          <span>{tx.date}</span>
+                          <span>•</span>
+                          <span class="bg-slate-700/60 px-2 py-0.5 rounded text-[10px] text-slate-300">{tx.category}</span>
+                        </div>
+                      </div>
+                      <div class="text-right">
+                        <span class="text-base font-bold text-slate-100 block">{fmt(tx.amount)}</span>
+                        <button onClick={() => deleteTx(tx.id)} class="text-[11px] text-rose-400 hover:underline mt-1">
+                          Eliminar
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="pt-2 border-t border-slate-800 grid grid-cols-2 gap-2 text-xs">
+                      {tx.splits?.map((sp) => {
+                        const person = state.persons.find(p => p.id === sp.personId);
+                        if (!person) return null;
                         return (
-                          <div key={cat} class="space-y-1">
-                            <div class="flex justify-between text-xs font-medium">
-                              <span class="text-slate-300">{cat}</span>
-                              <span class="text-slate-200 font-semibold">{fmt(val)}</span>
+                          <div key={sp.personId} class="flex items-center justify-between bg-slate-900/60 p-1.5 rounded border border-slate-800">
+                            <div class="flex items-center gap-1.5">
+                              <span class="w-2 h-2 rounded-full" style={{ backgroundColor: person.color }}></span>
+                              <span class="text-slate-300">{person.name}:</span>
                             </div>
-                            <div class="w-full h-2 bg-slate-700/60 rounded-full overflow-hidden">
-                              <div class="h-full bg-indigo-500 rounded-full transition-all duration-300" style={{ width: `${pct}%` }}></div>
-                            </div>
+                            <span class="font-medium text-slate-200">{fmt(sp.amount)}</span>
                           </div>
                         );
-                      })
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* VIEW 2: GASTOS */}
-            {activeTab === "gastos" && (
-              <div class="space-y-3">
-                {safeTransactions.length === 0 ? (
-                  <div class="text-center py-12 bg-slate-800/30 rounded-2xl border border-slate-800">
-                    <p class="text-4xl mb-2">💳</p>
-                    <p class="text-slate-400 text-sm">No hay transacciones guardadas</p>
-                    <button 
-                      onClick={() => setShowAddTxModal(true)}
-                      class="mt-3 px-4 py-2 bg-indigo-600 text-xs font-semibold text-white rounded-xl">
-                      Añadir primer gasto
-                    </button>
+                      })}
+                    </div>
                   </div>
-                ) : (
-                  safeTransactions.map(tx => (
-                    <div key={tx.id} class="bg-slate-800/80 border border-slate-700/60 rounded-xl overflow-hidden transition">
-                      <div 
-                        onClick={() => setExpandedTxId(expandedTxId === tx.id ? null : tx.id)}
-                        class="p-3.5 flex items-center justify-between cursor-pointer hover:bg-slate-700/30">
-                        <div class="flex-1 min-w-0 pr-3">
-                          {/* Editable Inline Title */}
-                          <input
-                            type="text"
-                            value={tx.description}
-                            onClick={e => e.stopPropagation()}
-                            onChange={e => handleUpdateTxDescription(tx.id, e.target.value)}
-                            class="bg-transparent font-semibold text-slate-100 text-sm w-full truncate border-b border-transparent hover:border-slate-600 focus:border-indigo-500 editable-input rounded px-1 py-0.5"
-                          />
-                          <div class="flex items-center gap-2 mt-1">
-                            <span class="text-[11px] text-slate-400">{tx.date}</span>
-                            <span class="text-[10px] px-2 py-0.5 bg-slate-700 rounded-md text-slate-300 font-medium">
-                              {tx.category}
-                            </span>
-                          </div>
-                        </div>
+                ))
+              )}
+            </div>
+          )}
 
-                        <div class="text-right flex items-center gap-2">
-                          <div>
-                            {/* Editable Inline Amount */}
-                            <input
-                              type="text"
-                              onClick={e => e.stopPropagation()}
-                              value={tx.amount}
-                              onChange={e => handleUpdateTxAmount(tx.id, e.target.value)}
-                              class="bg-transparent font-bold text-slate-100 text-sm text-right w-20 border-b border-transparent hover:border-slate-600 focus:border-indigo-500 editable-input rounded px-1 py-0.5"
-                            />
-                            <div class="text-[10px] text-slate-400">Total</div>
-                          </div>
-                          <span class="text-slate-500 text-xs">{expandedTxId === tx.id ? '▲' : '▼'}</span>
-                        </div>
-                      </div>
-
-                      {/* Expanded Details */}
-                      {expandedTxId === tx.id && (
-                        <div class="px-3.5 pb-3.5 pt-2 border-t border-slate-700/50 bg-slate-850/50 space-y-2">
-                          <p class="text-xs font-semibold text-slate-400 mb-1">Reparto del gasto:</p>
-                          {(tx.splits || []).map(sp => {
-                            const person = (state.persons || []).find(p => p.id === sp.personId);
-                            return (
-                              <div key={sp.personId} class="flex items-center justify-between text-xs py-1">
-                                <div class="flex items-center gap-1.5">
-                                  <span class="w-2 h-2 rounded-full" style={{ backgroundColor: person?.color || "#888" }}></span>
-                                  <span class="text-slate-300">{person?.name || "Desconocido"}</span>
-                                </div>
-                                <div class="flex items-center gap-2">
-                                  <span class="font-medium text-slate-200">{fmt(sp.amount)}</span>
-                                  {sp.personId !== "p-me" && (
-                                    <button
-                                      onClick={() => {
-                                        updateState(prev => ({
-                                          ...prev,
-                                          transactions: prev.transactions.map(t => {
-                                            if (t.id !== tx.id) return t;
-                                            return {
-                                              ...t,
-                                              splits: t.splits.map(s => s.personId === sp.personId ? { ...s, paid: !s.paid } : s)
-                                            };
-                                          })
-                                        }));
-                                      }}
-                                      class={`px-2 py-0.5 text-[10px] rounded font-semibold ${
-                                        sp.paid ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
-                                      }`}>
-                                      {sp.paid ? '✓ Pagado' : 'Pendiente'}
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-
-                          <div class="pt-2 flex justify-end">
-                            <button
-                              onClick={() => requestDeleteTx(tx.id)}
-                              class="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-medium rounded-lg border border-rose-500/20 transition">
-                              🗑️ Mover a papelera
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))
-                )}
+          {activeTab === "historial" && (
+            <div class="space-y-4">
+              <div class="flex items-center justify-between bg-slate-800/40 p-3 rounded-xl border border-slate-800">
+                <span class="text-xs text-slate-400">Filtrar por año:</span>
+                <select
+                  value={yearFilter}
+                  onChange={(e) => setYearFilter(e.target.value)}
+                  class="bg-slate-900 text-slate-200 text-xs rounded-lg px-2.5 py-1 outline-none border border-slate-700"
+                >
+                  <option value="ALL">Todos los Años</option>
+                  {yearsList.map((y) => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
               </div>
-            )}
 
-            {/* VIEW 3: PERSONAS */}
-            {activeTab === "personas" && (
-              <div class="space-y-3">
-                {(state.persons || []).map(p => (
-                  <div key={p.id} class="bg-slate-800/80 border border-slate-700/60 p-3.5 rounded-xl flex items-center justify-between">
-                    <div class="flex items-center gap-2.5">
-                      <span class="w-3 h-3 rounded-full" style={{ backgroundColor: p.color }}></span>
-                      <span class="font-semibold text-sm text-slate-200">{p.name}</span>
-                      {p.id === 'p-me' && <span class="text-[10px] px-1.5 py-0.2 bg-indigo-500/20 text-indigo-400 rounded font-semibold">Tú</span>}
-                    </div>
+              {yearsList.filter(y => yearFilter === "ALL" || String(y) === String(yearFilter)).map((year) => (
+                <div key={year} class="bg-slate-800/30 p-4 rounded-xl border border-slate-800 space-y-3">
+                  <div class="flex justify-between items-center border-b border-slate-800 pb-2">
+                    <h3 class="text-base font-bold text-amber-400 flex items-center gap-2">
+                      <span>📅</span> Año {year}
+                    </h3>
                     <span class="text-xs text-slate-400">
-                      ID: {p.id}
+                      Total Año: <strong class="text-slate-200 font-mono">
+                        {fmt(tripsByYear[year].reduce((a, b) => a + b.totalAmount, 0))}
+                      </strong>
                     </span>
                   </div>
-                ))}
-              </div>
-            )}
 
-            {/* VIEW 4: CATEGORÍAS */}
-            {activeTab === "categorias" && (
-              <div class="grid grid-cols-2 gap-2">
-                {(state.categories || []).map(cat => (
-                  <div key={cat} class="bg-slate-800/80 border border-slate-700/60 p-3 rounded-xl text-xs font-medium text-slate-200 flex items-center justify-between">
-                    <span>{cat}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* VIEW 5: DESESTIMADOS / PAPELERA */}
-            {activeTab === "desestimados" && (
-              <div class="space-y-3">
-                {(state.dismissed || []).length === 0 ? (
-                  <div class="text-center py-12 bg-slate-800/30 rounded-2xl border border-slate-800">
-                    <p class="text-4xl mb-2">🗑️</p>
-                    <p class="text-slate-400 text-sm">La papelera está vacía</p>
-                  </div>
-                ) : (
-                  state.dismissed.map(d => (
-                    <div key={d.id} class="bg-slate-800/50 border border-slate-700/40 p-3.5 rounded-xl flex items-center justify-between opacity-80">
-                      <div>
-                        <p class="text-xs font-semibold text-slate-300">{d.description}</p>
-                        <p class="text-[11px] text-slate-500">{d.date} · {fmt(d.amount)}</p>
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {tripsByYear[year].map((trip) => (
+                      <div
+                        key={trip.id}
+                        onClick={() => { updateState(s => ({ ...s, selectedTripId: trip.id })); setActiveTab("resumen"); }}
+                        class={`p-3 rounded-xl border cursor-pointer transition-all hover:border-indigo-500/60 ${
+                          state.selectedTripId === trip.id ? "bg-indigo-950/40 border-indigo-500" : "bg-slate-900/60 border-slate-800"
+                        }`}
+                      >
+                        <div class="flex justify-between items-start">
+                          <div>
+                            <h4 class="text-sm font-semibold text-slate-100">{trip.name}</h4>
+                            <span class="text-xs text-slate-500">{trip.count} registros</span>
+                          </div>
+                          <span class="text-sm font-bold text-indigo-300 font-mono">{fmt(trip.totalAmount)}</span>
+                        </div>
                       </div>
-                      <button 
-                        onClick={() => handleRestoreTx(d.id)}
-                        class="px-2.5 py-1 bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 text-xs font-semibold rounded-lg border border-emerald-500/30">
-                        Restaurar
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-
-          </main>
-
-          {/* GIST MODAL */}
-          {showGistModal && (
-            <div class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div class="bg-slate-850 border border-slate-700 rounded-2xl p-5 w-full max-w-md shadow-2xl space-y-4">
-                <h3 class="text-base font-bold text-white flex items-center gap-2">🔑 Sincronización en la Nube (GitHub Gist)</h3>
-                <p class="text-xs text-slate-400">Ingresa tu Personal Access Token de GitHub para realizar copias de seguridad de forma segura.</p>
-                
-                <div class="space-y-3">
-                  <div>
-                    <label class="text-xs text-slate-400 block mb-1">GitHub Personal Access Token</label>
-                    <input 
-                      type="password" 
-                      value={gistToken} 
-                      onChange={e => setGistToken(e.target.value)}
-                      placeholder="ghp_xxxxxxxxxxxx"
-                      class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500" 
-                    />
-                  </div>
-                  <div>
-                    <label class="text-xs text-slate-400 block mb-1">Gist ID (Opcional para actualizar)</label>
-                    <input 
-                      type="text" 
-                      value={gistId} 
-                      onChange={e => setGistId(e.target.value)}
-                      placeholder="e.g. 8f921a..."
-                      class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500" 
-                    />
-                  </div>
-                </div>
-
-                <div class="flex gap-2 pt-2">
-                  <button 
-                    onClick={handleSyncGist}
-                    disabled={isSyncing}
-                    class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs py-2.5 rounded-xl shadow transition">
-                    {isSyncing ? "Guardando..." : "Subir a la Nube"}
-                  </button>
-                  {gistId && (
-                    <button 
-                      onClick={handleLoadGist}
-                      disabled={isSyncing}
-                      class="px-3 bg-slate-700 hover:bg-slate-600 text-slate-200 font-semibold text-xs py-2.5 rounded-xl transition">
-                      Descargar
-                    </button>
-                  )}
-                  <button 
-                    onClick={() => setShowGistModal(false)}
-                    class="px-3 bg-slate-800 text-slate-400 font-semibold text-xs py-2.5 rounded-xl transition">
-                    Cerrar
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ADD TX MODAL */}
-          {showAddTxModal && (
-            <div class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div class="bg-slate-850 border border-slate-700 rounded-2xl p-5 w-full max-w-md shadow-2xl space-y-3">
-                <h3 class="text-base font-bold text-white">+ Agregar Nuevo Gasto</h3>
-                
-                <div>
-                  <label class="text-xs text-slate-400 block mb-1">Descripción</label>
-                  <input 
-                    type="text" 
-                    value={txForm.description}
-                    onChange={e => setTxForm({ ...txForm, description: e.target.value })}
-                    placeholder="Ej. Resto de taxi"
-                    class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-
-                <div class="grid grid-cols-2 gap-2">
-                  <div>
-                    <label class="text-xs text-slate-400 block mb-1">Importe (€)</label>
-                    <input 
-                      type="number" 
-                      step="0.01"
-                      value={txForm.amount}
-                      onChange={e => setTxForm({ ...txForm, amount: e.target.value })}
-                      placeholder="0.00"
-                      class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
-                    />
-                  </div>
-                  <div>
-                    <label class="text-xs text-slate-400 block mb-1">Fecha</label>
-                    <input 
-                      type="date" 
-                      value={txForm.date}
-                      onChange={e => setTxForm({ ...txForm, date: e.target.value })}
-                      class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label class="text-xs text-slate-400 block mb-1">Categoría</label>
-                  <select
-                    value={txForm.category}
-                    onChange={e => setTxForm({ ...txForm, category: e.target.value })}
-                    class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500">
-                    {DEFAULT_CATEGORIES.map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
                     ))}
-                  </select>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {activeTab === "personas" && (
+            <div class="space-y-3">
+              <div class="bg-slate-800/40 p-4 rounded-xl border border-slate-800">
+                <h3 class="text-sm font-semibold text-slate-200 mb-3">Integrantes configurados</h3>
+                <div class="space-y-2">
+                  {state.persons.map((p) => (
+                    <div key={p.id} class="flex items-center justify-between bg-slate-900/80 p-3 rounded-xl border border-slate-800">
+                      <div class="flex items-center gap-3">
+                        <span class="w-3.5 h-3.5 rounded-full" style={{ backgroundColor: p.color }}></span>
+                        <span class="text-sm font-medium text-slate-200">{p.name}</span>
+                        {p.id === "p-2" && <span class="text-[10px] bg-pink-500/20 text-pink-300 px-2 py-0.5 rounded border border-pink-500/30">Fijo (p2)</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "categorias" && (
+            <div class="space-y-3">
+              <div class="bg-slate-800/40 p-4 rounded-xl border border-slate-800">
+                <h3 class="text-sm font-semibold text-slate-200 mb-3">Categorías de gasto</h3>
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                  {state.categories.map((cat) => (
+                    <div key={cat} class="bg-slate-900/80 p-2.5 rounded-lg border border-slate-800 text-xs text-slate-300 flex items-center gap-2">
+                      <span>{cat}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <footer class="mt-8 pt-4 border-t border-slate-800 text-center text-xs text-slate-500">
+            TripCount v2.1 • Guardado automático local
+          </footer>
+
+          {addTxModal && (
+            <div class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 w-full max-w-md space-y-4">
+                <h3 class="text-base font-bold text-slate-100">Añadir Nuevo Gasto</h3>
+
+                <div class="space-y-3 text-xs">
+                  <div>
+                    <label class="block text-slate-400 mb-1">Viaje asignado</label>
+                    <select
+                      value={txForm.tripId}
+                      onChange={(e) => setTxForm({ ...txForm, tripId: e.target.value })}
+                      class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none"
+                    >
+                      {state.trips.map((t) => (
+                        <option key={t.id} value={t.id}>{t.name} ({t.year})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label class="block text-slate-400 mb-1">Concepto / Descripción</label>
+                    <input
+                      type="text"
+                      placeholder="Ej. Cena en Trattoria"
+                      value={txForm.description}
+                      onChange={(e) => setTxForm({ ...txForm, description: e.target.value })}
+                      class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div class="grid grid-cols-2 gap-2">
+                    <div>
+                      <label class="block text-slate-400 mb-1">Importe (€)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={txForm.amount}
+                        onChange={(e) => setTxForm({ ...txForm, amount: e.target.value })}
+                        class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label class="block text-slate-400 mb-1">Fecha</label>
+                      <input
+                        type="date"
+                        value={txForm.date}
+                        onChange={(e) => setTxForm({ ...txForm, date: e.target.value })}
+                        class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label class="block text-slate-400 mb-1">Categoría</label>
+                    <select
+                      value={txForm.category}
+                      onChange={(e) => setTxForm({ ...txForm, category: e.target.value })}
+                      class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none"
+                    >
+                      {state.categories.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
-                <div class="flex gap-2 pt-3">
-                  <button 
-                    onClick={handleAddTransaction}
-                    class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs py-2.5 rounded-xl transition">
-                    Guardar Gasto
-                  </button>
-                  <button 
-                    onClick={() => setShowAddTxModal(false)}
-                    class="px-4 bg-slate-800 text-slate-400 font-semibold text-xs py-2.5 rounded-xl transition">
-                    Cancelar
+                <div class="flex justify-end gap-2 pt-2">
+                  <button onClick={() => setAddTxModal(false)} class="px-4 py-1.5 text-xs text-slate-400 hover:text-slate-200">Cancelar</button>
+                  <button onClick={handleAddTransaction} class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg">Guardar Gasto</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {addTripModal && (
+            <div class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 w-full max-w-sm space-y-4">
+                <h3 class="text-base font-bold text-slate-100">Crear Nuevo Viaje</h3>
+
+                <div class="space-y-3 text-xs">
+                  <div>
+                    <label class="block text-slate-400 mb-1">Nombre del Viaje</label>
+                    <input
+                      type="text"
+                      placeholder="Ej. Vacaciones Japón"
+                      value={tripForm.name}
+                      onChange={(e) => setTripForm({ ...tripForm, name: e.target.value })}
+                      class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-slate-400 mb-1">Año</label>
+                    <input
+                      type="number"
+                      value={tripForm.year}
+                      onChange={(e) => setTripForm({ ...tripForm, year: e.target.value })}
+                      class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div class="flex justify-end gap-2 pt-2">
+                  <button onClick={() => setAddTripModal(false)} class="px-4 py-1.5 text-xs text-slate-400 hover:text-slate-200">Cancelar</button>
+                  <button onClick={handleCreateTrip} class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg">Crear Viaje</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {showTokenModal && (
+            <div class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 w-full max-w-md space-y-4">
+                <h3 class="text-base font-bold text-slate-100">🔑 Sincronización GitHub Gist</h3>
+                <p class="text-xs text-slate-400 leading-relaxed">
+                  Ingresa tu Personal Access Token de GitHub con permisos de <code>gist</code>.
+                </p>
+                <input
+                  type="password"
+                  placeholder="ghp_xxxxxxxxxxxx"
+                  value={tokenInput}
+                  onChange={(e) => setTokenInput(e.target.value)}
+                  class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 outline-none font-mono"
+                />
+                <div class="flex justify-end gap-2">
+                  <button onClick={() => setShowTokenModal(false)} class="px-4 py-1.5 text-xs text-slate-400">Cancelar</button>
+                  <button onClick={handleSaveToken} class="px-4 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold rounded-lg">
+                    {syncing ? "Sincronizando..." : "Guardar Token"}
                   </button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* JSON IMPORT MODAL */}
-          {showJsonModal && (
-            <div class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div class="bg-slate-850 border border-slate-700 rounded-2xl p-5 w-full max-w-md shadow-2xl space-y-3">
-                <h3 class="text-base font-bold text-white">📥 Importar JSON de Gastos</h3>
-                <p class="text-xs text-slate-400">Pega un array o un objeto JSON con transacciones.</p>
-                
-                <textarea
-                  rows="6"
-                  value={jsonInputText}
-                  onChange={e => setJsonInputText(e.target.value)}
-                  placeholder='[{"description": "Cena", "amount": 25.5, "category": "🍽️ Restaurantes"}]'
-                  class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs font-mono text-slate-100 focus:outline-none focus:border-indigo-500"
-                ></textarea>
-
-                <div class="flex gap-2">
-                  <button 
-                    onClick={handleImportJson}
-                    class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs py-2.5 rounded-xl transition">
-                    Procesar e Importar
-                  </button>
-                  <button 
-                    onClick={() => setShowJsonModal(false)}
-                    class="px-4 bg-slate-800 text-slate-400 font-semibold text-xs py-2.5 rounded-xl transition">
-                    Cancelar
-                  </button>
+          {confirmModal.open && (
+            <div class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 w-full max-w-sm space-y-3">
+                <h3 class="text-sm font-bold text-slate-100">{confirmModal.title}</h3>
+                <p class="text-xs text-slate-400">{confirmModal.message}</p>
+                <div class="flex justify-end gap-2 pt-2">
+                  <button onClick={() => setConfirmModal({ open: false })} class="px-3 py-1.5 text-xs text-slate-400">Cancelar</button>
+                  <button onClick={confirmModal.onConfirm} class="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold rounded-lg">Confirmar</button>
                 </div>
               </div>
             </div>
           )}
-
-          {/* CONFIRMATION MODAL */}
-          {confirmModal.show && (
-            <div class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div class="bg-slate-850 border border-slate-700 rounded-2xl p-5 w-full max-w-sm shadow-2xl space-y-3">
-                <h3 class="text-base font-bold text-white">{confirmModal.title}</h3>
-                <p class="text-xs text-slate-300">{confirmModal.message}</p>
-                <div class="flex gap-2 pt-2">
-                  <button 
-                    onClick={confirmModal.onConfirm}
-                    class="flex-1 bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs py-2.5 rounded-xl transition">
-                    Confirmar
-                  </button>
-                  <button 
-                    onClick={() => setConfirmModal({ show: false })}
-                    class="px-4 bg-slate-800 text-slate-400 font-semibold text-xs py-2.5 rounded-xl transition">
-                    Cancelar
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
         </div>
       );
     }
 
-    const rootElement = document.getElementById('root');
-    const root = ReactDOM.createRoot(rootElement);
-    root.render(
-      <ErrorBoundary>
-        <App />
-      </ErrorBoundary>
-    );
+    try {
+      const root = ReactDOM.createRoot(document.getElementById("root"));
+      root.render(<App />);
+    } catch (err) {
+      document.getElementById("root").innerHTML = `<div style="padding: 20px; color: #f87171;">Error al cargar: ${err.message}</div>`;
+    }
   </script>
+</body>
+</html>
