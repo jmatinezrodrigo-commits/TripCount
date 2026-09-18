@@ -37,7 +37,7 @@
   <script type="text/babel">
     const { useState, useEffect } = React;
 
-    const STORAGE_KEY = "tripcount_app_data_v5";
+    const STORAGE_KEY = "tripcount_app_data_v6";
     const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 
     const DEFAULT_CATEGORIES = [
@@ -89,7 +89,7 @@
       const [addTxModal, setAddTxModal] = useState(false);
       const [tripModal, setTripModal] = useState({ open: false, mode: "create", id: null, name: "", year: new Date().getFullYear(), month: new Date().getMonth() });
 
-      const [txForm, setTxForm] = useState({ description: "", amount: "", date: new Date().toISOString().slice(0, 10), category: "📦 Otros", tripId: state.selectedTripId || "" });
+      const [txForm, setTxForm] = useState({ description: "", amount: "", date: new Date().toISOString().slice(0, 10), category: "📦 Otros", tripId: state.selectedTripId || "trip-1" });
 
       useEffect(() => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -113,7 +113,7 @@
         setConfirmModal({
           open: true,
           title: "Eliminar Viaje",
-          message: `¿Estás seguro de eliminar "${tripName}"? Se borrarán también todos sus gastos asociados.`,
+          message: `¿Estás seguro de eliminar "${tripName}"? Se borrarán todos sus gastos asociados.`,
           onConfirm: () => {
             setState(s => {
               const remaining = s.trips.filter(t => t.id !== tripId);
@@ -152,29 +152,43 @@
       const handleAddTransaction = () => {
         const amt = parseFloat(txForm.amount);
         if (!txForm.description.trim() || isNaN(amt) || amt <= 0) return;
+        const targetTripId = txForm.tripId || state.selectedTripId || state.trips[0]?.id;
         const newTx = {
-          id: "tx-" + uid(), tripId: txForm.tripId || state.selectedTripId, date: txForm.date,
+          id: "tx-" + uid(), tripId: targetTripId, date: txForm.date,
           description: txForm.description.trim(), amount: amt, category: txForm.category,
           splits: [{ personId: "p-1", amount: amt / 2, paid: true }, { personId: "p-2", amount: amt / 2, paid: true }]
         };
         setState(s => ({ ...s, transactions: [newTx, ...s.transactions] }));
         setAddTxModal(false);
+        setTxForm({ description: "", amount: "", date: new Date().toISOString().slice(0, 10), category: "📦 Otros", tripId: state.selectedTripId });
       };
 
       return (
         <div class="min-h-screen flex flex-col justify-between max-w-4xl mx-auto px-4 py-3">
+          {/* Header Superior con Botones Directos */}
           <header class="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800 pb-3">
-            <div class="flex items-center gap-2">
-              <span class="text-2xl">✈️</span>
-              <h1 class="text-xl font-bold text-slate-100 tracking-tight">TripCount</h1>
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="text-2xl">✈️</span>
+                <h1 class="text-xl font-bold text-slate-100 tracking-tight">TripCount</h1>
+              </div>
+              
+              {/* Botón Verde para Añadir Gasto (Móvil) */}
+              <button
+                onClick={() => { setTxForm(f => ({ ...f, tripId: state.selectedTripId !== "ALL" ? state.selectedTripId : state.trips[0]?.id })); setAddTxModal(true); }}
+                class="md:hidden px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg shadow-sm"
+              >
+                + Gasto
+              </button>
             </div>
 
+            {/* Selector de Viajes */}
             <div class="flex items-center gap-1.5 bg-slate-800/80 p-1.5 rounded-xl border border-slate-700/60">
               <span class="text-xs text-slate-400 pl-1 font-medium">Viaje:</span>
               <select
                 value={state.selectedTripId}
                 onChange={(e) => setState(s => ({ ...s, selectedTripId: e.target.value }))}
-                class="bg-slate-900 text-slate-200 text-xs font-semibold rounded-lg px-2 py-1 outline-none border border-slate-700 flex-1 max-w-[170px] truncate"
+                class="bg-slate-900 text-slate-200 text-xs font-semibold rounded-lg px-2 py-1 outline-none border border-slate-700 flex-1 max-w-[160px] truncate"
               >
                 <option value="ALL">📋 Todos los Viajes</option>
                 {state.trips.map((t) => (
@@ -182,7 +196,6 @@
                 ))}
               </select>
 
-              {/* Botones de acción directos para el viaje seleccionado */}
               {state.selectedTripId !== "ALL" && (
                 <div class="flex items-center gap-1 bg-slate-900 px-1 py-0.5 rounded-lg border border-slate-700">
                   <button
@@ -204,13 +217,23 @@
                 onClick={() => setTripModal({ open: true, mode: "create", id: null, name: "", year: new Date().getFullYear(), month: new Date().getMonth() })}
                 class="px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow-sm ml-1"
               >
-                + Nuevo
+                + Nuevo Viaje
+              </button>
+            </div>
+
+            {/* Botón Verde para Añadir Gasto (Escritorio) */}
+            <div class="hidden md:flex items-center">
+              <button
+                onClick={() => { setTxForm(f => ({ ...f, tripId: state.selectedTripId !== "ALL" ? state.selectedTripId : state.trips[0]?.id })); setAddTxModal(true); }}
+                class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1"
+              >
+                <span>+</span> Añadir Gasto
               </button>
             </div>
           </header>
 
           <nav class="flex overflow-x-auto gap-1 border-b border-slate-800 my-3 pb-1 text-sm font-medium">
-            {[["resumen", "📊 Resumen"], ["gastos", "💳 Gastos"], ["historial", "📚 Histórico por Años"]].map(([k, label]) => (
+            {[["resumen", "📊 Resumen"], ["gastos", "💳 Gastos Detallados"], ["historial", "📚 Histórico por Años"]].map(([k, label]) => (
               <button
                 key={k} onClick={() => setActiveTab(k)}
                 class={`px-3 py-1.5 rounded-lg whitespace-nowrap ${activeTab === k ? "bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 font-semibold" : "text-slate-400"}`}
@@ -220,6 +243,7 @@
             ))}
           </nav>
 
+          {/* Vista: Resumen */}
           {activeTab === "resumen" && (
             <div class="space-y-4">
               <div class="grid grid-cols-2 gap-3">
@@ -232,9 +256,54 @@
                   <span class="text-lg font-bold text-indigo-400">{fmt(viewTotalShare)}</span>
                 </div>
               </div>
+
+              <div class="flex justify-between items-center pt-2">
+                <h3 class="text-sm font-semibold text-slate-200">Últimos apuntes de {currentTrip.name}</h3>
+                <button
+                  onClick={() => { setTxForm(f => ({ ...f, tripId: state.selectedTripId !== "ALL" ? state.selectedTripId : state.trips[0]?.id })); setAddTxModal(true); }}
+                  class="text-xs text-emerald-400 font-semibold hover:underline"
+                >
+                  + Añadir otro gasto
+                </button>
+              </div>
             </div>
           )}
 
+          {/* Vista: Gastos Detallados */}
+          {activeTab === "gastos" && (
+            <div class="space-y-3">
+              <div class="flex justify-between items-center mb-2">
+                <span class="text-xs text-slate-400">Transacciones de: <strong>{currentTrip.name}</strong></span>
+                <button
+                  onClick={() => { setTxForm(f => ({ ...f, tripId: state.selectedTripId !== "ALL" ? state.selectedTripId : state.trips[0]?.id })); setAddTxModal(true); }}
+                  class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg"
+                >
+                  + Añadir Gasto
+                </button>
+              </div>
+
+              {filteredTransactions.length === 0 ? (
+                <div class="text-center py-8 border border-dashed border-slate-800 rounded-xl text-xs text-slate-400">
+                  No hay gastos en este viaje.
+                </div>
+              ) : (
+                filteredTransactions.map((tx) => (
+                  <div key={tx.id} class="bg-slate-800/50 p-3.5 rounded-xl border border-slate-700/60 flex justify-between items-center">
+                    <div>
+                      <h4 class="text-sm font-semibold text-slate-100">{tx.description}</h4>
+                      <span class="text-xs text-slate-400">{tx.date} • {tx.category}</span>
+                    </div>
+                    <div class="text-right">
+                      <span class="text-base font-bold text-slate-100 block">{fmt(tx.amount)}</span>
+                      <button onClick={() => setState(s => ({ ...s, transactions: s.transactions.filter(t => t.id !== tx.id) }))} class="text-[11px] text-rose-400 hover:underline">Eliminar</button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
+          {/* Vista: Histórico */}
           {activeTab === "historial" && (
             <div class="space-y-4">
               {yearsList.map((year) => (
@@ -260,7 +329,83 @@
             </div>
           )}
 
-          {/* Modal Editar / Crear */}
+          {/* MODAL: Añadir Gasto */}
+          {addTxModal && (
+            <div class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 w-full max-w-md space-y-4">
+                <h3 class="text-base font-bold text-slate-100">Añadir Nuevo Gasto</h3>
+
+                <div class="space-y-3 text-xs">
+                  <div>
+                    <label class="block text-slate-400 mb-1">Viaje asignado</label>
+                    <select
+                      value={txForm.tripId}
+                      onChange={(e) => setTxForm({ ...txForm, tripId: e.target.value })}
+                      class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none"
+                    >
+                      {state.trips.map((t) => (
+                        <option key={t.id} value={t.id}>{t.name} ({MONTHS[t.month || 0].slice(0,3)} {t.year})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label class="block text-slate-400 mb-1">Concepto / Descripción</label>
+                    <input
+                      type="text"
+                      placeholder="Ej. Entrada museo, Cena, Supermercado"
+                      value={txForm.description}
+                      onChange={(e) => setTxForm({ ...txForm, description: e.target.value })}
+                      class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div class="grid grid-cols-2 gap-2">
+                    <div>
+                      <label class="block text-slate-400 mb-1">Importe (€)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={txForm.amount}
+                        onChange={(e) => setTxForm({ ...txForm, amount: e.target.value })}
+                        class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label class="block text-slate-400 mb-1">Fecha</label>
+                      <input
+                        type="date"
+                        value={txForm.date}
+                        onChange={(e) => setTxForm({ ...txForm, date: e.target.value })}
+                        class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label class="block text-slate-400 mb-1">Categoría</label>
+                    <select
+                      value={txForm.category}
+                      onChange={(e) => setTxForm({ ...txForm, category: e.target.value })}
+                      class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none"
+                    >
+                      {state.categories.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div class="flex justify-end gap-2 pt-2">
+                  <button onClick={() => setAddTxModal(false)} class="px-4 py-1.5 text-xs text-slate-400 hover:text-slate-200">Cancelar</button>
+                  <button onClick={handleAddTransaction} class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg">Guardar Gasto</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* MODAL: Crear/Editar Viaje */}
           {tripModal.open && (
             <div class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
               <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 w-full max-w-sm space-y-4">
@@ -291,7 +436,7 @@
             </div>
           )}
 
-          {/* Modal Confirmación de Eliminación */}
+          {/* MODAL: Confirmación */}
           {confirmModal.open && (
             <div class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
               <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 w-full max-w-sm space-y-3">
