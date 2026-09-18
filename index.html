@@ -31,9 +31,9 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect, useRef } = React;
+    const { useState, useEffect } = React;
 
-    const STORAGE_KEY = "card_tracker_tripcount_v7";
+    const STORAGE_KEY = "card_tracker_tripcount_v8";
     const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 
     const DEFAULT_CATEGORIES = [
@@ -58,7 +58,9 @@
       ],
       categories: DEFAULT_CATEGORIES,
       transactions: [],
-      dismissed: []
+      dismissed: [],
+      githubToken: "",
+      gistId: ""
     };
 
     function App() {
@@ -82,8 +84,16 @@
 
       // Modales
       const [addTxModal, setAddTxModal] = useState(false);
+      const [tokenModal, setTokenModal] = useState(false);
+      const [tokenInput, setTokenInput] = useState(state.githubToken || "");
+      const [syncing, setSyncing] = useState(false);
+
       const [tripModal, setTripModal] = useState({ open: false, mode: "create", id: null, name: "", year: new Date().getFullYear(), month: new Date().getMonth() });
       const [confirmModal, setConfirmModal] = useState({ open: false, title: "", message: "", onConfirm: null });
+
+      // Añadir categoría inline
+      const [creatingCat, setCreatingCat] = useState(false);
+      const [newCatInput, setNewCatInput] = useState("");
 
       const EMPTY_TX_FORM = {
         description: "",
@@ -123,6 +133,55 @@
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
       }, [history]);
+
+      // Guardar Token GitHub
+      const handleSaveToken = async () => {
+        if (!tokenInput.trim()) {
+          updateState(s => ({ ...s, githubToken: "", gistId: "" }));
+          setTokenModal(false);
+          return;
+        }
+        setSyncing(true);
+        try {
+          const headers = { Authorization: `token ${tokenInput.trim()}`, "Content-Type": "application/json" };
+          const body = {
+            description: "CardTracker TripCount Sync Data",
+            public: false,
+            files: { "cardtracker_data.json": { content: JSON.stringify(state, null, 2) } }
+          };
+          let res;
+          if (state.gistId) {
+            res = await fetch(`https://api.github.com/gists/${state.gistId}`, { method: "PATCH", headers, body: JSON.stringify(body) });
+          } else {
+            res = await fetch("https://api.github.com/gists", { method: "POST", headers, body: JSON.stringify(body) });
+          }
+          const data = await res.json();
+          if (data.id) {
+            updateState(s => ({ ...s, githubToken: tokenInput.trim(), gistId: data.id }));
+            alert("¡Token configurado y datos sincronizados con éxito!");
+          } else {
+            alert("Token inválido.");
+          }
+        } catch (e) {
+          alert("Error de conexión al sincronizar.");
+        } finally {
+          setSyncing(false);
+          setTokenModal(false);
+        }
+      };
+
+      // Añadir Categoría nueva al vuelo
+      const handleAddCategory = () => {
+        const val = newCatInput.trim();
+        if (!val) return;
+        const formatted = val.includes(" ") ? val : "🏷️ " + val;
+        if (!state.categories.includes(formatted)) {
+          updateState(s => ({ ...s, categories: [...s.categories, formatted] }));
+        }
+        setTxForm(f => ({ ...f, category: formatted }));
+        setNewCatInput("");
+        setCreatingCat(false);
+      };
 
       // Gestión Viajes
       const handleSaveTrip = () => {
@@ -203,7 +262,7 @@
 
       return (
         <div style={S.root}>
-          {/* Header Superior Original con Selector de Viaje */}
+          {/* Header Superior */}
           <header style={S.header}>
             <div style={S.headerInner}>
               <div>
@@ -211,7 +270,7 @@
                 <div style={S.headerSub}>Control de gastos personal</div>
               </div>
 
-              {/* Selector de Viajes integrado */}
+              {/* Selector de Viajes */}
               <div style={S.tripSelectorBar}>
                 <span style={{ fontSize: 12, color: "#888" }}>Viaje:</span>
                 <select
@@ -235,24 +294,25 @@
                 <button onClick={() => setTripModal({ open: true, mode: "create", id: null, name: "", year: new Date().getFullYear(), month: new Date().getMonth() })} style={S.tripAddBtn}>+ Viaje</button>
               </div>
 
+              {/* Botones de Cabecera con Sync de Token */}
               <div style={S.headerButtons}>
+                <button style={{ ...S.uploadBtnAlt, borderColor: state.githubToken ? "#00C9A7" : "#6C63FF", color: state.githubToken ? "#00C9A7" : "#6C63FF" }} onClick={() => { setTokenInput(state.githubToken || ""); setTokenModal(true); }}>
+                  🔑 {state.githubToken ? "Sync ON" : "Token"}
+                </button>
                 {history.length > 0 && <button style={S.uploadBtnAlt} onClick={handleUndo}>↩ Deshacer</button>}
-                <button style={S.uploadBtn} onClick={() => alert("Función de importación lista")}>🖼️ Imagen</button>
-                <button style={S.uploadBtnAlt}>{"{ } JSON"}</button>
                 <button style={S.uploadBtnGreen} onClick={() => { setTxForm(f => ({ ...f, tripId: state.selectedTripId !== "ALL" ? state.selectedTripId : state.trips[0]?.id })); setAddTxModal(true); }}>+ Gasto</button>
               </div>
             </div>
           </header>
 
-          {/* Navegación Original */}
+          {/* Navegación Principal */}
           <nav style={S.nav}>
             {[
               ["resumen", "📊 Resumen"],
               ["gastos", "💳 Gastos"],
               ["historial", "📚 Histórico / Años"],
               ["personas", "👥 Personas"],
-              ["categorias", "🏷️ Categorías"],
-              ["desestimados", "🗑️ Desest."]
+              ["categorias", "🏷️ Categorías"]
             ].map(([k, l]) => (
               <button key={k} style={{ ...S.navBtn, ...(tab === k ? S.navBtnActive : {}) }} onClick={() => setTab(k)}>
                 {l}
@@ -359,14 +419,14 @@
             )}
           </main>
 
-          {/* MODAL: AÑADIR GASTO MANUAL (ESTILO ORIGINAL CAPTURA) */}
+          {/* MODAL: AÑADIR GASTO MANUAL CON BOTÓN CON '+' */}
           {addTxModal && (
             <div style={S.overlay}>
               <div style={S.modal}>
                 <div style={S.modalTitle}>+ Añadir gasto manual</div>
 
                 <div style={S.formGroup}>
-                  <label style={S.formLabel}>Viaje</label>
+                  <label style={S.formLabel}>Viaje asignado</label>
                   <select value={txForm.tripId} onChange={e => setTxForm({ ...txForm, tripId: e.target.value })} style={S.input}>
                     {state.trips.map(t => (
                       <option key={t.id} value={t.id}>{t.name} ({MONTHS[t.month || 0].slice(0,3)} {t.year})</option>
@@ -390,6 +450,7 @@
                   </div>
                 </div>
 
+                {/* Categorías con opción de añadir tipo nuevo '+' */}
                 <div style={S.formGroup}>
                   <label style={S.formLabel}>Categoría</label>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
@@ -399,12 +460,57 @@
                         {cat}
                       </button>
                     ))}
+
+                    {/* Botón '+' para crear tipo de gasto */}
+                    {!creatingCat ? (
+                      <button onClick={() => setCreatingCat(true)} style={{ ...S.catPill, border: "1px dashed #6C63FF", color: "#6C63FF", fontWeight: 700 }}>
+                        + Nueva
+                      </button>
+                    ) : (
+                      <div style={{ display: "flex", gap: 4, width: "100%", marginTop: 4 }}>
+                        <input
+                          autoFocus
+                          style={{ ...S.input, padding: "6px 10px", fontSize: 12 }}
+                          placeholder="Nombre de la nueva categoría..."
+                          value={newCatInput}
+                          onChange={e => setNewCatInput(e.target.value)}
+                          onKeyDown={e => e.key === "Enter" && handleAddCategory()}
+                        />
+                        <button style={S.btnPrimary} onClick={handleAddCategory}>OK</button>
+                        <button style={S.btnSecondary} onClick={() => setCreatingCat(false)}>✕</button>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 <div style={S.txActions}>
                   <button style={S.btnSecondary} onClick={() => setAddTxModal(false)}>Cancelar</button>
                   <button style={S.btnPrimary} onClick={handleAddTx}>Añadir gasto</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* MODAL: CONFIGURAR TOKEN GITHUB */}
+          {tokenModal && (
+            <div style={S.overlay}>
+              <div style={{ ...S.modal, maxWidth: 380 }}>
+                <div style={S.modalTitle}>🔑 Sincronización Cross-Device</div>
+                <div style={{ fontSize: 12, color: "#aaa", marginBottom: 12, lineHeight: 1.4 }}>
+                  Pega tu GitHub Personal Access Token con permisos de <strong>gist</strong> para guardar y sincronizar tu información en la nube.
+                </div>
+                <input
+                  type="password"
+                  style={{ ...S.input, fontFamily: "monospace", fontSize: 12, marginBottom: 16 }}
+                  placeholder="ghp_xxxxxxxxxxxx"
+                  value={tokenInput}
+                  onChange={e => setTokenInput(e.target.value)}
+                />
+                <div style={S.txActions}>
+                  <button style={S.btnSecondary} onClick={() => setTokenModal(false)}>Cancelar</button>
+                  <button style={S.btnPrimary} onClick={handleSaveToken}>
+                    {syncing ? "Guardando..." : "Guardar Token"}
+                  </button>
                 </div>
               </div>
             </div>
@@ -469,7 +575,7 @@
       return <div style={S.empty}><div style={{ fontSize: 40, marginBottom: 12 }}>{icon}</div><div style={{ color: "#666" }}>{text}</div></div>;
     }
 
-    // Estilos exactos del diseño original
+    // Estilos del tema oscuro original
     const S = {
       root: { minHeight: "100vh", background: "#0F1117", color: "#E8E8F0", paddingBottom: 40 },
       header: { background: "#1A1D27", borderBottom: "1px solid #2A2D3A", padding: "16px 20px" },
@@ -480,7 +586,6 @@
       tripSelectorBar: { display: "flex", alignItems: "center", gap: 6, background: "#0F1117", padding: "4px 8px", borderRadius: 8, border: "1px solid #2A2D3A" },
       tripSelect: { background: "none", border: "none", color: "#E8E8F0", fontSize: 13, fontWeight: 600, outline: "none" },
       tripAddBtn: { background: "#6C63FF22", color: "#6C63FF", border: "1px solid #6C63FF", borderRadius: 6, padding: "3px 8px", fontSize: 11, fontWeight: 600, cursor: "pointer" },
-      uploadBtn: { background: "#6C63FF", color: "#fff", border: "none", borderRadius: 8, padding: "8px 14px", fontWeight: 600, cursor: "pointer", fontSize: 13 },
       uploadBtnAlt: { background: "#2A2D3A", color: "#6C63FF", border: "1px solid #6C63FF", borderRadius: 8, padding: "8px 12px", fontWeight: 600, cursor: "pointer", fontSize: 13 },
       uploadBtnGreen: { background: "rgba(0,201,167,0.15)", color: "#00C9A7", border: "1px solid #00C9A7", borderRadius: 8, padding: "8px 14px", fontWeight: 600, cursor: "pointer", fontSize: 13 },
       iconBtn: { background: "none", border: "none", cursor: "pointer", fontSize: 12, padding: 2 },
@@ -507,8 +612,8 @@
       viewAsOptions: { display: "flex", gap: 8 },
       viewAsBtn: { display: "flex", alignItems: "center", gap: 6, background: "#1A1D27", border: "1px solid #2A2D3A", borderRadius: 20, padding: "6px 14px", color: "#aaa", cursor: "pointer", fontSize: 13 },
       personDotSm: { width: 8, height: 8, borderRadius: "50%" },
-      overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 16 },
-      modal: { background: "#1A1D27", borderRadius: 16, padding: 24, width: "100%", maxWidth: 440, border: "1px solid #2A2D3A" },
+      overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyBetween: "center", zIndex: 100, padding: 16 },
+      modal: { background: "#1A1D27", borderRadius: 16, padding: 24, width: "100%", maxWidth: 440, border: "1px solid #2A2D3A", margin: "auto" },
       modalTitle: { fontWeight: 700, fontSize: 17, marginBottom: 16 },
       formGroup: { marginBottom: 14 },
       formRow: { display: "flex", gap: 10, marginBottom: 14 },
