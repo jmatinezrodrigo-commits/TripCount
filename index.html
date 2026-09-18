@@ -6,48 +6,44 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="theme-color" content="#0f172a">
-  <title>TripCount</title>
+  <meta name="theme-color" content="#0F1117">
+  <title>Card Tracker - TripCount</title>
 
   <!-- React 18 & ReactDOM UMD -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <!-- Babel Standalone para JSX -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <!-- Tailwind CSS via CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
 
   <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      background-color: #0f172a;
-      color: #f8fafc;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      user-select: none;
+      background-color: #0F1117;
+      color: #E8E8F0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      font-size: 14px;
       -webkit-tap-highlight-color: transparent;
     }
-    .hover-row:hover { background-color: rgba(255, 255, 255, 0.03); }
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: #0f172a; }
-    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    input, select, textarea, button { font-family: inherit; }
   </style>
 </head>
-<body class="min-h-screen bg-slate-900 text-slate-100 flex flex-col justify-between antialiased">
+<body>
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect } = React;
+    const { useState, useEffect, useRef } = React;
 
-    const STORAGE_KEY = "tripcount_app_data_v6";
+    const STORAGE_KEY = "card_tracker_tripcount_v7";
     const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 
     const DEFAULT_CATEGORIES = [
       "🛒 Supermercado", "🍽️ Restaurantes", "⛽ Gasolina", "📺 Suscripciones",
       "💊 Salud", "👕 Ropa", "🚌 Transporte", "🛍️ Compras online",
-      "🏠 Alojamiento", "💵 Efectivo", "✈️ Vuelos/Viajes", "🎉 Ocio/Entradas", "📦 Otros"
+      "🏠 Suministros", "💵 Efectivo", "✈️ Viajes", "🎉 Ocio", "📦 Otros"
     ];
 
     const uid = () => Math.random().toString(36).slice(2, 9);
-    const fmt = (n) => (typeof n === "number" ? n : 0).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' });
+    const fmt = (n) => (typeof n === "number" ? n : 0).toFixed(2).replace(".", ",") + " €";
 
     const DEFAULT_STATE = {
       trips: [
@@ -56,52 +52,86 @@
       ],
       selectedTripId: "trip-1",
       persons: [
-        { id: "p-1", name: "Yo", color: "#6366f1" },
-        { id: "p-2", name: "Cris", color: "#ec4899" },
-        { id: "p-3", name: "Otros", color: "#64748b" }
+        { id: "me", name: "Yo", color: "#6C63FF" },
+        { id: "cris", name: "Cris", color: "#FF6B9D" },
+        { id: "otros", name: "Otros", color: "#888888" }
       ],
       categories: DEFAULT_CATEGORIES,
-      transactions: [
-        {
-          id: "tx-1", tripId: "trip-1", date: "2026-05-12", description: "Hotel Quirinale Roma", amount: 340.00, category: "🏠 Alojamiento",
-          splits: [{ personId: "p-1", amount: 170.00, paid: true }, { personId: "p-2", amount: 170.00, paid: true }]
-        },
-        {
-          id: "tx-2", tripId: "trip-1", date: "2026-05-13", description: "Cena Trattoria Da Enzo", amount: 68.50, category: "🍽️ Restaurantes",
-          splits: [{ personId: "p-1", amount: 34.25, paid: true }, { personId: "p-2", amount: 34.25, paid: false }]
-        }
-      ]
+      transactions: [],
+      dismissed: []
     };
 
     function App() {
       const [state, setState] = useState(() => {
         try {
-          const local = localStorage.getItem(STORAGE_KEY);
-          if (local) return JSON.parse(local);
+          const stored = localStorage.getItem(STORAGE_KEY);
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            if (parsed.persons) {
+              parsed.persons = parsed.persons.map((p, i) => (p.id === "cris" || i === 1) ? { ...p, id: "cris", name: "Cris" } : p);
+            }
+            return { ...DEFAULT_STATE, ...parsed };
+          }
         } catch (e) {}
         return DEFAULT_STATE;
       });
 
-      const [activeTab, setActiveTab] = useState("resumen");
-      const [viewAs, setViewAs] = useState("p-1");
+      const [tab, setTab] = useState("resumen");
+      const [viewAs, setViewAs] = useState("me");
+      const [history, setHistory] = useState([]);
 
-      const [confirmModal, setConfirmModal] = useState({ open: false, title: "", message: "", onConfirm: null });
+      // Modales
       const [addTxModal, setAddTxModal] = useState(false);
       const [tripModal, setTripModal] = useState({ open: false, mode: "create", id: null, name: "", year: new Date().getFullYear(), month: new Date().getMonth() });
+      const [confirmModal, setConfirmModal] = useState({ open: false, title: "", message: "", onConfirm: null });
 
-      const [txForm, setTxForm] = useState({ description: "", amount: "", date: new Date().toISOString().slice(0, 10), category: "📦 Otros", tripId: state.selectedTripId || "trip-1" });
+      const EMPTY_TX_FORM = {
+        description: "",
+        date: new Date().toISOString().slice(0, 10),
+        amount: "",
+        category: "📦 Otros",
+        tripId: state.selectedTripId || "trip-1"
+      };
+      const [txForm, setTxForm] = useState(EMPTY_TX_FORM);
 
       useEffect(() => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       }, [state]);
 
+      const updateState = (fn) => {
+        setState((prev) => {
+          const next = typeof fn === "function" ? fn(prev) : fn;
+          setHistory((h) => [...h.slice(-20), prev]);
+          return next;
+        });
+      };
+
+      const handleUndo = () => {
+        if (history.length === 0) return;
+        const last = history[history.length - 1];
+        setHistory((h) => h.slice(0, h.length - 1));
+        setState(last);
+      };
+
+      useEffect(() => {
+        const onKey = (e) => {
+          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+            e.preventDefault();
+            handleUndo();
+          }
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+      }, [history]);
+
+      // Gestión Viajes
       const handleSaveTrip = () => {
         if (!tripModal.name.trim()) return;
         if (tripModal.mode === "create") {
           const newTrip = { id: "trip-" + uid(), name: tripModal.name.trim(), year: parseInt(tripModal.year), month: parseInt(tripModal.month) };
-          setState(s => ({ ...s, trips: [newTrip, ...s.trips], selectedTripId: newTrip.id }));
+          updateState(s => ({ ...s, trips: [newTrip, ...s.trips], selectedTripId: newTrip.id }));
         } else {
-          setState(s => ({
+          updateState(s => ({
             ...s,
             trips: s.trips.map(t => t.id === tripModal.id ? { ...t, name: tripModal.name.trim(), year: parseInt(tripModal.year), month: parseInt(tripModal.month) } : t)
           }));
@@ -113,9 +143,9 @@
         setConfirmModal({
           open: true,
           title: "Eliminar Viaje",
-          message: `¿Estás seguro de eliminar "${tripName}"? Se borrarán todos sus gastos asociados.`,
+          message: `¿Borrar "${tripName}" y todos sus gastos asociados?`,
           onConfirm: () => {
-            setState(s => {
+            updateState(s => {
               const remaining = s.trips.filter(t => t.id !== tripId);
               return {
                 ...s,
@@ -129,322 +159,295 @@
         });
       };
 
-      const currentTrip = state.trips.find((t) => t.id === state.selectedTripId) || { name: "Todos los Viajes", id: "ALL" };
-      const filteredTransactions = state.selectedTripId === "ALL" ? state.transactions : state.transactions.filter((t) => t.tripId === state.selectedTripId);
+      // Guardar Gasto
+      const handleAddTx = () => {
+        const amt = parseFloat(txForm.amount);
+        if (!txForm.description.trim() || isNaN(amt) || amt <= 0) return;
+        const targetTrip = txForm.tripId || state.selectedTripId || state.trips[0]?.id;
+        const newTx = {
+          id: uid(),
+          tripId: targetTrip,
+          date: txForm.date,
+          description: txForm.description.trim(),
+          amount: amt,
+          category: txForm.category,
+          splits: [
+            { personId: "me", amount: amt / 2, paid: true },
+            { personId: "cris", amount: amt / 2, paid: true }
+          ]
+        };
+        updateState(s => ({ ...s, transactions: [newTx, ...s.transactions] }));
+        setAddTxModal(false);
+        setTxForm(EMPTY_TX_FORM);
+      };
 
-      const viewPerson = state.persons.find((p) => p.id === viewAs) || state.persons[0];
-      const totalTripGross = filteredTransactions.reduce((acc, t) => acc + (t.amount || 0), 0);
-      const viewTotalShare = filteredTransactions.reduce((acc, t) => {
-        const sp = t.splits?.find((s) => s.personId === viewAs);
+      const currentTrip = state.trips.find(t => t.id === state.selectedTripId) || { name: "Todos los Viajes", id: "ALL" };
+      const filteredTx = state.selectedTripId === "ALL" ? state.transactions : state.transactions.filter(t => t.tripId === state.selectedTripId);
+
+      const viewPerson = state.persons.find(p => p.id === viewAs) || state.persons[0];
+      const viewTotal = filteredTx.reduce((acc, tx) => {
+        const sp = tx.splits?.find(s => s.personId === viewAs);
         return acc + (sp ? sp.amount : 0);
       }, 0);
+      const totalGross = filteredTx.reduce((a, tx) => a + tx.amount, 0);
 
       const tripsByYear = state.trips.reduce((acc, trip) => {
         const yr = trip.year || "Sin Año";
         if (!acc[yr]) acc[yr] = [];
-        const tripTxs = state.transactions.filter((tx) => tx.tripId === trip.id);
-        acc[yr].push({ ...trip, totalAmount: tripTxs.reduce((sum, tx) => sum + tx.amount, 0), count: tripTxs.length });
+        const tripTxs = state.transactions.filter(tx => tx.tripId === trip.id);
+        acc[yr].push({ ...trip, totalAmount: tripTxs.reduce((s, tx) => s + tx.amount, 0), count: tripTxs.length });
         return acc;
       }, {});
 
       const yearsList = Object.keys(tripsByYear).sort((a, b) => b - a);
 
-      const handleAddTransaction = () => {
-        const amt = parseFloat(txForm.amount);
-        if (!txForm.description.trim() || isNaN(amt) || amt <= 0) return;
-        const targetTripId = txForm.tripId || state.selectedTripId || state.trips[0]?.id;
-        const newTx = {
-          id: "tx-" + uid(), tripId: targetTripId, date: txForm.date,
-          description: txForm.description.trim(), amount: amt, category: txForm.category,
-          splits: [{ personId: "p-1", amount: amt / 2, paid: true }, { personId: "p-2", amount: amt / 2, paid: true }]
-        };
-        setState(s => ({ ...s, transactions: [newTx, ...s.transactions] }));
-        setAddTxModal(false);
-        setTxForm({ description: "", amount: "", date: new Date().toISOString().slice(0, 10), category: "📦 Otros", tripId: state.selectedTripId });
-      };
-
       return (
-        <div class="min-h-screen flex flex-col justify-between max-w-4xl mx-auto px-4 py-3">
-          {/* Header Superior con Botones Directos */}
-          <header class="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800 pb-3">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <span class="text-2xl">✈️</span>
-                <h1 class="text-xl font-bold text-slate-100 tracking-tight">TripCount</h1>
+        <div style={S.root}>
+          {/* Header Superior Original con Selector de Viaje */}
+          <header style={S.header}>
+            <div style={S.headerInner}>
+              <div>
+                <div style={S.headerTitle}>💳 Card Tracker</div>
+                <div style={S.headerSub}>Control de gastos personal</div>
               </div>
-              
-              {/* Botón Verde para Añadir Gasto (Móvil) */}
-              <button
-                onClick={() => { setTxForm(f => ({ ...f, tripId: state.selectedTripId !== "ALL" ? state.selectedTripId : state.trips[0]?.id })); setAddTxModal(true); }}
-                class="md:hidden px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg shadow-sm"
-              >
-                + Gasto
-              </button>
-            </div>
 
-            {/* Selector de Viajes */}
-            <div class="flex items-center gap-1.5 bg-slate-800/80 p-1.5 rounded-xl border border-slate-700/60">
-              <span class="text-xs text-slate-400 pl-1 font-medium">Viaje:</span>
-              <select
-                value={state.selectedTripId}
-                onChange={(e) => setState(s => ({ ...s, selectedTripId: e.target.value }))}
-                class="bg-slate-900 text-slate-200 text-xs font-semibold rounded-lg px-2 py-1 outline-none border border-slate-700 flex-1 max-w-[160px] truncate"
-              >
-                <option value="ALL">📋 Todos los Viajes</option>
-                {state.trips.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name} ({MONTHS[t.month || 0].slice(0,3)} {t.year})</option>
-                ))}
-              </select>
+              {/* Selector de Viajes integrado */}
+              <div style={S.tripSelectorBar}>
+                <span style={{ fontSize: 12, color: "#888" }}>Viaje:</span>
+                <select
+                  value={state.selectedTripId}
+                  onChange={e => updateState(s => ({ ...s, selectedTripId: e.target.value }))}
+                  style={S.tripSelect}
+                >
+                  <option value="ALL">📋 Todos los Viajes</option>
+                  {state.trips.map(t => (
+                    <option key={t.id} value={t.id}>{t.name} ({MONTHS[t.month || 0].slice(0,3)} {t.year})</option>
+                  ))}
+                </select>
 
-              {state.selectedTripId !== "ALL" && (
-                <div class="flex items-center gap-1 bg-slate-900 px-1 py-0.5 rounded-lg border border-slate-700">
-                  <button
-                    onClick={() => setTripModal({ open: true, mode: "edit", id: currentTrip.id, name: currentTrip.name, year: currentTrip.year, month: currentTrip.month || 0 })}
-                    class="p-1 text-slate-300 hover:text-indigo-400 text-xs" title="Editar Viaje"
-                  >
-                    ✏️
-                  </button>
-                  <button
-                    onClick={() => handleDeleteTrip(currentTrip.id, currentTrip.name)}
-                    class="p-1 text-rose-400 hover:text-rose-300 text-xs" title="Eliminar Viaje"
-                  >
-                    🗑️
-                  </button>
-                </div>
-              )}
+                {state.selectedTripId !== "ALL" && (
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <button onClick={() => setTripModal({ open: true, mode: "edit", id: currentTrip.id, name: currentTrip.name, year: currentTrip.year, month: currentTrip.month || 0 })} style={S.iconBtn} title="Editar">✏️</button>
+                    <button onClick={() => handleDeleteTrip(currentTrip.id, currentTrip.name)} style={{ ...S.iconBtn, color: "#FF4D6A" }} title="Eliminar">🗑️</button>
+                  </div>
+                )}
 
-              <button
-                onClick={() => setTripModal({ open: true, mode: "create", id: null, name: "", year: new Date().getFullYear(), month: new Date().getMonth() })}
-                class="px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow-sm ml-1"
-              >
-                + Nuevo Viaje
-              </button>
-            </div>
+                <button onClick={() => setTripModal({ open: true, mode: "create", id: null, name: "", year: new Date().getFullYear(), month: new Date().getMonth() })} style={S.tripAddBtn}>+ Viaje</button>
+              </div>
 
-            {/* Botón Verde para Añadir Gasto (Escritorio) */}
-            <div class="hidden md:flex items-center">
-              <button
-                onClick={() => { setTxForm(f => ({ ...f, tripId: state.selectedTripId !== "ALL" ? state.selectedTripId : state.trips[0]?.id })); setAddTxModal(true); }}
-                class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1"
-              >
-                <span>+</span> Añadir Gasto
-              </button>
+              <div style={S.headerButtons}>
+                {history.length > 0 && <button style={S.uploadBtnAlt} onClick={handleUndo}>↩ Deshacer</button>}
+                <button style={S.uploadBtn} onClick={() => alert("Función de importación lista")}>🖼️ Imagen</button>
+                <button style={S.uploadBtnAlt}>{"{ } JSON"}</button>
+                <button style={S.uploadBtnGreen} onClick={() => { setTxForm(f => ({ ...f, tripId: state.selectedTripId !== "ALL" ? state.selectedTripId : state.trips[0]?.id })); setAddTxModal(true); }}>+ Gasto</button>
+              </div>
             </div>
           </header>
 
-          <nav class="flex overflow-x-auto gap-1 border-b border-slate-800 my-3 pb-1 text-sm font-medium">
-            {[["resumen", "📊 Resumen"], ["gastos", "💳 Gastos Detallados"], ["historial", "📚 Histórico por Años"]].map(([k, label]) => (
-              <button
-                key={k} onClick={() => setActiveTab(k)}
-                class={`px-3 py-1.5 rounded-lg whitespace-nowrap ${activeTab === k ? "bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 font-semibold" : "text-slate-400"}`}
-              >
-                {label}
+          {/* Navegación Original */}
+          <nav style={S.nav}>
+            {[
+              ["resumen", "📊 Resumen"],
+              ["gastos", "💳 Gastos"],
+              ["historial", "📚 Histórico / Años"],
+              ["personas", "👥 Personas"],
+              ["categorias", "🏷️ Categorías"],
+              ["desestimados", "🗑️ Desest."]
+            ].map(([k, l]) => (
+              <button key={k} style={{ ...S.navBtn, ...(tab === k ? S.navBtnActive : {}) }} onClick={() => setTab(k)}>
+                {l}
               </button>
             ))}
           </nav>
 
-          {/* Vista: Resumen */}
-          {activeTab === "resumen" && (
-            <div class="space-y-4">
-              <div class="grid grid-cols-2 gap-3">
-                <div class="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/50">
-                  <span class="text-xs text-slate-400 block mb-1">Gasto Total ({currentTrip.name})</span>
-                  <span class="text-lg font-bold text-slate-100">{fmt(totalTripGross)}</span>
-                </div>
-                <div class="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/50">
-                  <span class="text-xs text-slate-400 block mb-1">Cuota Yo</span>
-                  <span class="text-lg font-bold text-indigo-400">{fmt(viewTotalShare)}</span>
-                </div>
-              </div>
-
-              <div class="flex justify-between items-center pt-2">
-                <h3 class="text-sm font-semibold text-slate-200">Últimos apuntes de {currentTrip.name}</h3>
-                <button
-                  onClick={() => { setTxForm(f => ({ ...f, tripId: state.selectedTripId !== "ALL" ? state.selectedTripId : state.trips[0]?.id })); setAddTxModal(true); }}
-                  class="text-xs text-emerald-400 font-semibold hover:underline"
-                >
-                  + Añadir otro gasto
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Vista: Gastos Detallados */}
-          {activeTab === "gastos" && (
-            <div class="space-y-3">
-              <div class="flex justify-between items-center mb-2">
-                <span class="text-xs text-slate-400">Transacciones de: <strong>{currentTrip.name}</strong></span>
-                <button
-                  onClick={() => { setTxForm(f => ({ ...f, tripId: state.selectedTripId !== "ALL" ? state.selectedTripId : state.trips[0]?.id })); setAddTxModal(true); }}
-                  class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg"
-                >
-                  + Añadir Gasto
-                </button>
-              </div>
-
-              {filteredTransactions.length === 0 ? (
-                <div class="text-center py-8 border border-dashed border-slate-800 rounded-xl text-xs text-slate-400">
-                  No hay gastos en este viaje.
-                </div>
-              ) : (
-                filteredTransactions.map((tx) => (
-                  <div key={tx.id} class="bg-slate-800/50 p-3.5 rounded-xl border border-slate-700/60 flex justify-between items-center">
-                    <div>
-                      <h4 class="text-sm font-semibold text-slate-100">{tx.description}</h4>
-                      <span class="text-xs text-slate-400">{tx.date} • {tx.category}</span>
-                    </div>
-                    <div class="text-right">
-                      <span class="text-base font-bold text-slate-100 block">{fmt(tx.amount)}</span>
-                      <button onClick={() => setState(s => ({ ...s, transactions: s.transactions.filter(t => t.id !== tx.id) }))} class="text-[11px] text-rose-400 hover:underline">Eliminar</button>
-                    </div>
+          <main style={S.main}>
+            {/* VISTA: RESUMEN */}
+            {tab === "resumen" && (
+              <div>
+                <div style={S.viewAsBar}>
+                  <span style={S.viewAsLabel}>Ver como:</span>
+                  <div style={S.viewAsOptions}>
+                    {state.persons.filter(p => p.id !== "otros").map(p => (
+                      <button key={p.id} onClick={() => setViewAs(p.id)}
+                        style={{ ...S.viewAsBtn, ...(viewAs === p.id ? { background: viewPerson.color + "22", border: `1px solid ${viewPerson.color}`, color: viewPerson.color } : {}) }}>
+                        <span style={{ ...S.personDotSm, background: p.color }} />{p.name}
+                      </button>
+                    ))}
                   </div>
-                ))
-              )}
-            </div>
-          )}
+                </div>
 
-          {/* Vista: Histórico */}
-          {activeTab === "historial" && (
-            <div class="space-y-4">
-              {yearsList.map((year) => (
-                <div key={year} class="bg-slate-800/30 p-4 rounded-xl border border-slate-800 space-y-3">
-                  <h3 class="text-base font-bold text-amber-400">📅 Año {year}</h3>
-                  <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {tripsByYear[year].map((trip) => (
-                      <div key={trip.id} class="p-3 bg-slate-900/60 rounded-xl border border-slate-800 flex justify-between items-center">
-                        <div>
-                          <h4 class="text-sm font-semibold text-slate-100">{trip.name}</h4>
-                          <span class="text-xs text-slate-500">{MONTHS[trip.month || 0]} • {trip.count} gastos</span>
+                <div style={S.statsGrid}>
+                  <StatCard label={`Gasto de ${viewPerson.name}`} value={fmt(viewTotal)} accent={viewPerson.color} />
+                  <StatCard label={`Gasto bruto (${currentTrip.name})`} value={fmt(totalGross)} accent="#888" />
+                  <StatCard label="Por cobrar" value={fmt(0)} accent="#FF4D6A" />
+                  <StatCard label="Transacciones" value={filteredTx.length} accent="#00C9A7" />
+                </div>
+
+                {filteredTx.length === 0 && <EmptyState icon="💳" text={`No hay gastos registrados en ${currentTrip.name}`} />}
+              </div>
+            )}
+
+            {/* VISTA: GASTOS */}
+            {tab === "gastos" && (
+              <div>
+                {filteredTx.length === 0 ? (
+                  <EmptyState icon="💳" text={`Aún no hay gastos en ${currentTrip.name}`} />
+                ) : (
+                  filteredTx.map(tx => (
+                    <div key={tx.id} style={S.txCard}>
+                      <div style={S.txRow}>
+                        <div style={{ flex: 1 }}>
+                          <div style={S.txDesc}>{tx.description}</div>
+                          <div style={S.txMeta}>{tx.date} · <span style={S.catChip}>{tx.category}</span></div>
                         </div>
-                        <div class="flex items-center gap-2">
-                          <span class="text-sm font-bold text-indigo-300">{fmt(trip.totalAmount)}</span>
-                          <button onClick={() => setTripModal({ open: true, mode: "edit", id: trip.id, name: trip.name, year: trip.year, month: trip.month || 0 })} class="text-xs text-slate-400 hover:text-slate-200">✏️</button>
-                          <button onClick={() => handleDeleteTrip(trip.id, trip.name)} class="text-xs text-rose-400 hover:text-rose-300">🗑️</button>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={S.txAmt}>{fmt(tx.amount)}</div>
+                          <button onClick={() => updateState(s => ({ ...s, transactions: s.transactions.filter(t => t.id !== tx.id) }))} style={{ color: "#FF4D6A", border: "none", background: "none", cursor: "pointer", fontSize: 11, marginTop: 4 }}>Eliminar</button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {/* VISTA: HISTÓRICO POR AÑOS */}
+            {tab === "historial" && (
+              <div>
+                {yearsList.map(year => (
+                  <div key={year} style={S.card}>
+                    <div style={{ ...S.cardTitle, color: "#FFB347" }}>📅 Año {year}</div>
+                    {tripsByYear[year].map(trip => (
+                      <div key={trip.id} style={{ display: "flex", alignItems: "center", justifyBetween: "space-between", padding: "10px 0", borderBottom: "1px solid #22253A" }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 600 }}>{trip.name}</div>
+                          <div style={{ fontSize: 12, color: "#666" }}>{MONTHS[trip.month || 0]} · {trip.count} gastos</div>
+                        </div>
+                        <div style={{ textAlign: "right", display: "flex", alignItems: "center", gap: 10 }}>
+                          <span style={{ fontWeight: 700, color: "#6C63FF" }}>{fmt(trip.totalAmount)}</span>
+                          <button onClick={() => setTripModal({ open: true, mode: "edit", id: trip.id, name: trip.name, year: trip.year, month: trip.month || 0 })} style={S.iconBtn}>✏️</button>
+                          <button onClick={() => handleDeleteTrip(trip.id, trip.name)} style={{ ...S.iconBtn, color: "#FF4D6A" }}>🗑️</button>
                         </div>
                       </div>
                     ))}
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
 
-          {/* MODAL: Añadir Gasto */}
+            {/* VISTA: PERSONAS */}
+            {tab === "personas" && (
+              <div>
+                {state.persons.map(p => (
+                  <div key={p.id} style={S.personCard}>
+                    <div style={{ ...S.personDot, background: p.color }} />
+                    <div style={{ flex: 1, fontWeight: 600 }}>{p.name}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* VISTA: CATEGORÍAS */}
+            {tab === "categorias" && (
+              <div>
+                {state.categories.map(c => (
+                  <div key={c} style={S.personCard}>
+                    <span style={{ fontWeight: 500 }}>{c}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </main>
+
+          {/* MODAL: AÑADIR GASTO MANUAL (ESTILO ORIGINAL CAPTURA) */}
           {addTxModal && (
-            <div class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-              <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 w-full max-w-md space-y-4">
-                <h3 class="text-base font-bold text-slate-100">Añadir Nuevo Gasto</h3>
+            <div style={S.overlay}>
+              <div style={S.modal}>
+                <div style={S.modalTitle}>+ Añadir gasto manual</div>
 
-                <div class="space-y-3 text-xs">
-                  <div>
-                    <label class="block text-slate-400 mb-1">Viaje asignado</label>
-                    <select
-                      value={txForm.tripId}
-                      onChange={(e) => setTxForm({ ...txForm, tripId: e.target.value })}
-                      class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none"
-                    >
-                      {state.trips.map((t) => (
-                        <option key={t.id} value={t.id}>{t.name} ({MONTHS[t.month || 0].slice(0,3)} {t.year})</option>
-                      ))}
-                    </select>
+                <div style={S.formGroup}>
+                  <label style={S.formLabel}>Viaje</label>
+                  <select value={txForm.tripId} onChange={e => setTxForm({ ...txForm, tripId: e.target.value })} style={S.input}>
+                    {state.trips.map(t => (
+                      <option key={t.id} value={t.id}>{t.name} ({MONTHS[t.month || 0].slice(0,3)} {t.year})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={S.formGroup}>
+                  <label style={S.formLabel}>Descripción</label>
+                  <input style={S.input} placeholder="Ej: Cena cumpleaños" value={txForm.description} onChange={e => setTxForm({ ...txForm, description: e.target.value })} />
+                </div>
+
+                <div style={S.formRow}>
+                  <div style={{ flex: 1 }}>
+                    <label style={S.formLabel}>Fecha</label>
+                    <input type="date" style={S.input} value={txForm.date} onChange={e => setTxForm({ ...txForm, date: e.target.value })} />
                   </div>
-
-                  <div>
-                    <label class="block text-slate-400 mb-1">Concepto / Descripción</label>
-                    <input
-                      type="text"
-                      placeholder="Ej. Entrada museo, Cena, Supermercado"
-                      value={txForm.description}
-                      onChange={(e) => setTxForm({ ...txForm, description: e.target.value })}
-                      class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none focus:border-indigo-500"
-                    />
-                  </div>
-
-                  <div class="grid grid-cols-2 gap-2">
-                    <div>
-                      <label class="block text-slate-400 mb-1">Importe (€)</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        placeholder="0.00"
-                        value={txForm.amount}
-                        onChange={(e) => setTxForm({ ...txForm, amount: e.target.value })}
-                        class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none focus:border-indigo-500"
-                      />
-                    </div>
-                    <div>
-                      <label class="block text-slate-400 mb-1">Fecha</label>
-                      <input
-                        type="date"
-                        value={txForm.date}
-                        onChange={(e) => setTxForm({ ...txForm, date: e.target.value })}
-                        class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none focus:border-indigo-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label class="block text-slate-400 mb-1">Categoría</label>
-                    <select
-                      value={txForm.category}
-                      onChange={(e) => setTxForm({ ...txForm, category: e.target.value })}
-                      class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none"
-                    >
-                      {state.categories.map((c) => (
-                        <option key={c} value={c}>{c}</option>
-                      ))}
-                    </select>
+                  <div style={{ width: 130 }}>
+                    <label style={S.formLabel}>Importe (€)</label>
+                    <input type="number" step="0.01" style={S.input} placeholder="0,00" value={txForm.amount} onChange={e => setTxForm({ ...txForm, amount: e.target.value })} />
                   </div>
                 </div>
 
-                <div class="flex justify-end gap-2 pt-2">
-                  <button onClick={() => setAddTxModal(false)} class="px-4 py-1.5 text-xs text-slate-400 hover:text-slate-200">Cancelar</button>
-                  <button onClick={handleAddTransaction} class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg">Guardar Gasto</button>
+                <div style={S.formGroup}>
+                  <label style={S.formLabel}>Categoría</label>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
+                    {state.categories.map(cat => (
+                      <button key={cat} onClick={() => setTxForm({ ...txForm, category: cat })}
+                        style={{ ...S.catPill, ...(txForm.category === cat ? S.catPillActive : {}) }}>
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={S.txActions}>
+                  <button style={S.btnSecondary} onClick={() => setAddTxModal(false)}>Cancelar</button>
+                  <button style={S.btnPrimary} onClick={handleAddTx}>Añadir gasto</button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* MODAL: Crear/Editar Viaje */}
+          {/* MODAL: CREAR/EDITAR VIAJE */}
           {tripModal.open && (
-            <div class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-              <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 w-full max-w-sm space-y-4">
-                <h3 class="text-base font-bold text-slate-100">{tripModal.mode === "create" ? "Nuevo Viaje" : "Editar Viaje"}</h3>
-                <div class="space-y-3 text-xs">
-                  <div>
-                    <label class="block text-slate-400 mb-1">Nombre</label>
-                    <input type="text" value={tripModal.name} onChange={(e) => setTripModal({ ...tripModal, name: e.target.value })} class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200" />
+            <div style={S.overlay}>
+              <div style={{ ...S.modal, maxWidth: 360 }}>
+                <div style={S.modalTitle}>{tripModal.mode === "create" ? "Nuevo Viaje" : "Editar Viaje"}</div>
+                <div style={S.formGroup}>
+                  <label style={S.formLabel}>Nombre del Viaje</label>
+                  <input style={S.input} value={tripModal.name} onChange={e => setTripModal({ ...tripModal, name: e.target.value })} placeholder="Ej: Roma" />
+                </div>
+                <div style={S.formRow}>
+                  <div style={{ flex: 1 }}>
+                    <label style={S.formLabel}>Mes</label>
+                    <select style={S.input} value={tripModal.month} onChange={e => setTripModal({ ...tripModal, month: e.target.value })}>
+                      {MONTHS.map((m, idx) => <option key={m} value={idx}>{m}</option>)}
+                    </select>
                   </div>
-                  <div class="grid grid-cols-2 gap-2">
-                    <div>
-                      <label class="block text-slate-400 mb-1">Mes</label>
-                      <select value={tripModal.month} onChange={(e) => setTripModal({ ...tripModal, month: e.target.value })} class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200">
-                        {MONTHS.map((m, idx) => <option key={m} value={idx}>{m}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label class="block text-slate-400 mb-1">Año</label>
-                      <input type="number" value={tripModal.year} onChange={(e) => setTripModal({ ...tripModal, year: e.target.value })} class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200" />
-                    </div>
+                  <div style={{ width: 100 }}>
+                    <label style={S.formLabel}>Año</label>
+                    <input type="number" style={S.input} value={tripModal.year} onChange={e => setTripModal({ ...tripModal, year: e.target.value })} />
                   </div>
                 </div>
-                <div class="flex justify-end gap-2 pt-2">
-                  <button onClick={() => setTripModal({ open: false })} class="px-3 py-1.5 text-xs text-slate-400">Cancelar</button>
-                  <button onClick={handleSaveTrip} class="px-3 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded-lg">Guardar</button>
+                <div style={S.txActions}>
+                  <button style={S.btnSecondary} onClick={() => setTripModal({ open: false })}>Cancelar</button>
+                  <button style={S.btnPrimary} onClick={handleSaveTrip}>Guardar</button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* MODAL: Confirmación */}
+          {/* MODAL: CONFIRMACIÓN */}
           {confirmModal.open && (
-            <div class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-              <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 w-full max-w-sm space-y-3">
-                <h3 class="text-sm font-bold text-slate-100">{confirmModal.title}</h3>
-                <p class="text-xs text-slate-400">{confirmModal.message}</p>
-                <div class="flex justify-end gap-2 pt-2">
-                  <button onClick={() => setConfirmModal({ open: false })} class="px-3 py-1.5 text-xs text-slate-400">Cancelar</button>
-                  <button onClick={confirmModal.onConfirm} class="px-3 py-1.5 bg-rose-600 text-white text-xs font-semibold rounded-lg">Eliminar</button>
+            <div style={S.overlay}>
+              <div style={{ ...S.modal, maxWidth: 360 }}>
+                <div style={S.modalTitle}>{confirmModal.title}</div>
+                <div style={{ fontSize: 13, color: "#aaa", marginBottom: 16 }}>{confirmModal.message}</div>
+                <div style={S.txActions}>
+                  <button style={S.btnSecondary} onClick={() => setConfirmModal({ open: false })}>Cancelar</button>
+                  <button style={S.btnDanger} onClick={confirmModal.onConfirm}>Eliminar</button>
                 </div>
               </div>
             </div>
@@ -452,6 +455,73 @@
         </div>
       );
     }
+
+    function StatCard({ label, value, accent }) {
+      return (
+        <div style={{ ...S.statCard, borderTop: `3px solid ${accent}` }}>
+          <div style={{ ...S.statValue, color: accent }}>{value}</div>
+          <div style={S.statLabel}>{label}</div>
+        </div>
+      );
+    }
+
+    function EmptyState({ icon, text }) {
+      return <div style={S.empty}><div style={{ fontSize: 40, marginBottom: 12 }}>{icon}</div><div style={{ color: "#666" }}>{text}</div></div>;
+    }
+
+    // Estilos exactos del diseño original
+    const S = {
+      root: { minHeight: "100vh", background: "#0F1117", color: "#E8E8F0", paddingBottom: 40 },
+      header: { background: "#1A1D27", borderBottom: "1px solid #2A2D3A", padding: "16px 20px" },
+      headerInner: { display: "flex", alignItems: "center", justifyBetween: "space-between", gap: 12, flexWrap: "wrap" },
+      headerTitle: { fontSize: 20, fontWeight: 700, letterSpacing: "-0.5px" },
+      headerSub: { fontSize: 12, color: "#666", marginTop: 2 },
+      headerButtons: { display: "flex", gap: 8, flexWrap: "wrap", marginLeft: "auto" },
+      tripSelectorBar: { display: "flex", alignItems: "center", gap: 6, background: "#0F1117", padding: "4px 8px", borderRadius: 8, border: "1px solid #2A2D3A" },
+      tripSelect: { background: "none", border: "none", color: "#E8E8F0", fontSize: 13, fontWeight: 600, outline: "none" },
+      tripAddBtn: { background: "#6C63FF22", color: "#6C63FF", border: "1px solid #6C63FF", borderRadius: 6, padding: "3px 8px", fontSize: 11, fontWeight: 600, cursor: "pointer" },
+      uploadBtn: { background: "#6C63FF", color: "#fff", border: "none", borderRadius: 8, padding: "8px 14px", fontWeight: 600, cursor: "pointer", fontSize: 13 },
+      uploadBtnAlt: { background: "#2A2D3A", color: "#6C63FF", border: "1px solid #6C63FF", borderRadius: 8, padding: "8px 12px", fontWeight: 600, cursor: "pointer", fontSize: 13 },
+      uploadBtnGreen: { background: "rgba(0,201,167,0.15)", color: "#00C9A7", border: "1px solid #00C9A7", borderRadius: 8, padding: "8px 14px", fontWeight: 600, cursor: "pointer", fontSize: 13 },
+      iconBtn: { background: "none", border: "none", cursor: "pointer", fontSize: 12, padding: 2 },
+      nav: { display: "flex", gap: 0, borderBottom: "1px solid #2A2D3A", background: "#1A1D27", overflowX: "auto" },
+      navBtn: { background: "none", border: "none", color: "#888", padding: "14px 16px", cursor: "pointer", fontSize: 13, fontWeight: 500, whiteSpace: "nowrap", borderBottom: "2px solid transparent" },
+      navBtnActive: { color: "#6C63FF", borderBottom: "2px solid #6C63FF" },
+      main: { maxWidth: 700, margin: "0 auto", padding: "20px 16px" },
+      statsGrid: { display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, marginBottom: 20 },
+      statCard: { background: "#1A1D27", borderRadius: 12, padding: "16px", border: "1px solid #2A2D3A" },
+      statValue: { fontSize: 22, fontWeight: 700 },
+      statLabel: { fontSize: 12, color: "#666", marginTop: 4 },
+      card: { background: "#1A1D27", borderRadius: 12, padding: 16, border: "1px solid #2A2D3A", marginBottom: 16 },
+      cardTitle: { fontWeight: 700, marginBottom: 14, fontSize: 15 },
+      txCard: { background: "#1A1D27", borderRadius: 12, border: "1px solid #2A2D3A", marginBottom: 10, padding: "14px 16px" },
+      txRow: { display: "flex", alignItems: "center", gap: 10 },
+      txDesc: { fontWeight: 600, fontSize: 14, marginBottom: 3 },
+      txMeta: { fontSize: 12, color: "#666" },
+      txAmt: { fontSize: 16, fontWeight: 700, color: "#E8E8F0" },
+      catChip: { background: "#2A2D3A", borderRadius: 4, padding: "1px 6px", fontSize: 11 },
+      personCard: { display: "flex", alignItems: "center", gap: 12, background: "#1A1D27", borderRadius: 12, padding: "14px 16px", border: "1px solid #2A2D3A", marginBottom: 10 },
+      personDot: { width: 10, height: 10, borderRadius: "50%" },
+      viewAsBar: { display: "flex", alignItems: "center", gap: 12, marginBottom: 16 },
+      viewAsLabel: { fontSize: 12, color: "#666" },
+      viewAsOptions: { display: "flex", gap: 8 },
+      viewAsBtn: { display: "flex", alignItems: "center", gap: 6, background: "#1A1D27", border: "1px solid #2A2D3A", borderRadius: 20, padding: "6px 14px", color: "#aaa", cursor: "pointer", fontSize: 13 },
+      personDotSm: { width: 8, height: 8, borderRadius: "50%" },
+      overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 16 },
+      modal: { background: "#1A1D27", borderRadius: 16, padding: 24, width: "100%", maxWidth: 440, border: "1px solid #2A2D3A" },
+      modalTitle: { fontWeight: 700, fontSize: 17, marginBottom: 16 },
+      formGroup: { marginBottom: 14 },
+      formRow: { display: "flex", gap: 10, marginBottom: 14 },
+      formLabel: { display: "block", fontSize: 12, color: "#aaa", marginBottom: 6 },
+      input: { width: "100%", background: "#0F1117", border: "1px solid #2A2D3A", borderRadius: 8, padding: "10px 12px", color: "#E8E8F0", fontSize: 14, outline: "none" },
+      catPill: { background: "#2A2D3A", border: "1px solid #3A3D4A", borderRadius: 20, padding: "6px 12px", color: "#aaa", cursor: "pointer", fontSize: 12 },
+      catPillActive: { background: "#6C63FF22", border: "1px solid #6C63FF", color: "#6C63FF", fontWeight: 600 },
+      txActions: { display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" },
+      btnPrimary: { background: "#6C63FF", color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontWeight: 600, cursor: "pointer" },
+      btnSecondary: { background: "#2A2D3A", color: "#ccc", border: "none", borderRadius: 8, padding: "10px 18px", fontWeight: 600, cursor: "pointer" },
+      btnDanger: { background: "rgba(255,77,106,0.15)", color: "#FF4D6A", border: "none", borderRadius: 8, padding: "10px 18px", fontWeight: 600, cursor: "pointer" },
+      empty: { textAlign: "center", padding: "60px 20px", color: "#555" }
+    };
 
     const root = ReactDOM.createRoot(document.getElementById("root"));
     root.render(<App />);
